@@ -647,12 +647,26 @@ int Mono2dBodyDetNode::PostProcess(
     std::unordered_map<int32_t, std::vector<std::shared_ptr<MotTrackId>>>
         out_disappeared_ids;
 
-    uint64_t ts_ms =
-        fasterRcnn_output->image_msg_header->stamp.sec * 1000 +
-        fasterRcnn_output->image_msg_header->stamp.nanosec / 1000 / 1000;
-    time_t time_stamp = ts_ms;
+    // Only run MOT if track_mode_ is enabled
+    if (track_mode_ == 1) {
+      uint64_t ts_ms =
+          fasterRcnn_output->image_msg_header->stamp.sec * 1000 +
+          fasterRcnn_output->image_msg_header->stamp.nanosec / 1000 / 1000;
+      time_t time_stamp = ts_ms;
 
-    DoMot(time_stamp, rois, out_rois, out_disappeared_ids);
+      DoMot(time_stamp, rois, out_rois, out_disappeared_ids);
+    } else {
+      // Skip MOT, copy rois directly to out_rois
+      for (const auto& roi : rois) {
+        std::vector<MotBox> boxes;
+        for (const auto& box : roi.second) {
+          MotBox out_box = box;
+          out_box.id = 0;  // Default track ID
+          boxes.push_back(out_box);
+        }
+        out_rois[roi.first] = boxes;
+      }
+    }
 #endif
 #ifndef PLATFORM_X86
     for (const auto& out_roi : out_rois) 

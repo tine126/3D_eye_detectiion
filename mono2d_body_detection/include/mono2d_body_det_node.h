@@ -102,7 +102,7 @@ class Mono2dBodyDetNode : public DnnNode {
 
   int model_type_ = 1;
 
-  int track_mode_ = 1;
+  int track_mode_ = 0;  // Disabled MOT tracking
 
   std::string model_file_name_ =
       "config/multitask_body_head_face_hand_kps_960x544.hbm";
