@@ -8,6 +8,8 @@
 #include <sensor_msgs/msg/image.hpp>
 #include <string>
 #include <memory>
+#include <chrono>
+#include <atomic>
 
 class Mono8ToNv12Node : public rclcpp::Node {
  public:
@@ -19,7 +21,8 @@ class Mono8ToNv12Node : public rclcpp::Node {
   void RightImageCallback(const sensor_msgs::msg::Image::ConstSharedPtr msg);
 
   sensor_msgs::msg::Image::SharedPtr ConvertMono8ToNv12(
-      const sensor_msgs::msg::Image::ConstSharedPtr& mono8_msg);
+      const sensor_msgs::msg::Image::ConstSharedPtr& mono8_msg,
+      double& convert_time_ms);
 
   // Subscribers
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr left_sub_;
@@ -34,6 +37,11 @@ class Mono8ToNv12Node : public rclcpp::Node {
   std::string right_input_topic_;
   std::string left_output_topic_;
   std::string right_output_topic_;
+
+  // Timing parameters
+  int timing_log_interval_ = 30;
+  std::atomic<int> left_frame_count_{0};
+  std::atomic<int> right_frame_count_{0};
 };
 
 #endif  // MONO8_TO_NV12__MONO8_TO_NV12_NODE_H_

@@ -11,12 +11,14 @@ Mono8ToNv12Node::Mono8ToNv12Node(const rclcpp::NodeOptions& options)
   this->declare_parameter<std::string>("right_input_topic", "/right_ir/image_raw");
   this->declare_parameter<std::string>("left_output_topic", "/image_left");
   this->declare_parameter<std::string>("right_output_topic", "/image_right");
+  this->declare_parameter<int>("timing_log_interval", 30);
 
   // Get parameters
   this->get_parameter("left_input_topic", left_input_topic_);
   this->get_parameter("right_input_topic", right_input_topic_);
   this->get_parameter("left_output_topic", left_output_topic_);
   this->get_parameter("right_output_topic", right_output_topic_);
+  this->get_parameter("timing_log_interval", timing_log_interval_);
 
   // Create publishers
   left_pub_ = this->create_publisher<sensor_msgs::msg::Image>(
@@ -41,25 +43,75 @@ Mono8ToNv12Node::Mono8ToNv12Node(const rclcpp::NodeOptions& options)
 
 void Mono8ToNv12Node::LeftImageCallback(
     const sensor_msgs::msg::Image::ConstSharedPtr msg) {
-  auto nv12_msg = ConvertMono8ToNv12(msg);
+  auto callback_start = std::chrono::steady_clock::now();
+
+  // Calculate receive delay
+  auto msg_time = rclcpp::Time(msg->header.stamp);
+  auto now_time = this->now();
+  double recv_delay_ms = (now_time - msg_time).seconds() * 1000.0;
+
+  // Convert image
+  double convert_time_ms = 0;
+  auto nv12_msg = ConvertMono8ToNv12(msg, convert_time_ms);
+
   if (nv12_msg) {
     left_pub_->publish(*nv12_msg);
+  }
+
+  // Calculate total time
+  auto callback_end = std::chrono::steady_clock::now();
+  double total_time_ms = std::chrono::duration_cast<std::chrono::microseconds>(
+      callback_end - callback_start).count() / 1000.0;
+
+  // Log timing
+  int count = ++left_frame_count_;
+  if (timing_log_interval_ > 0 && count % timing_log_interval_ == 0) {
+    RCLCPP_INFO(this->get_logger(),
+        "[mono8_to_nv12] LEFT  recv=%.2fms convert=%.2fms total=%.2fms",
+        recv_delay_ms, convert_time_ms, total_time_ms);
   }
 }
 
 void Mono8ToNv12Node::RightImageCallback(
     const sensor_msgs::msg::Image::ConstSharedPtr msg) {
-  auto nv12_msg = ConvertMono8ToNv12(msg);
+  auto callback_start = std::chrono::steady_clock::now();
+
+  // Calculate receive delay
+  auto msg_time = rclcpp::Time(msg->header.stamp);
+  auto now_time = this->now();
+  double recv_delay_ms = (now_time - msg_time).seconds() * 1000.0;
+
+  // Convert image
+  double convert_time_ms = 0;
+  auto nv12_msg = ConvertMono8ToNv12(msg, convert_time_ms);
+
   if (nv12_msg) {
     right_pub_->publish(*nv12_msg);
+  }
+
+  // Calculate total time
+  auto callback_end = std::chrono::steady_clock::now();
+  double total_time_ms = std::chrono::duration_cast<std::chrono::microseconds>(
+      callback_end - callback_start).count() / 1000.0;
+
+  // Log timing
+  int count = ++right_frame_count_;
+  if (timing_log_interval_ > 0 && count % timing_log_interval_ == 0) {
+    RCLCPP_INFO(this->get_logger(),
+        "[mono8_to_nv12] RIGHT recv=%.2fms convert=%.2fms total=%.2fms",
+        recv_delay_ms, convert_time_ms, total_time_ms);
   }
 }
 
 sensor_msgs::msg::Image::SharedPtr Mono8ToNv12Node::ConvertMono8ToNv12(
-    const sensor_msgs::msg::Image::ConstSharedPtr& mono8_msg) {
+    const sensor_msgs::msg::Image::ConstSharedPtr& mono8_msg,
+    double& convert_time_ms) {
+  auto convert_start = std::chrono::steady_clock::now();
+
   if (mono8_msg->encoding != "mono8") {
     RCLCPP_WARN(this->get_logger(), "Expected mono8 encoding, got %s",
         mono8_msg->encoding.c_str());
+    convert_time_ms = 0;
     return nullptr;
   }
 
@@ -84,6 +136,10 @@ sensor_msgs::msg::Image::SharedPtr Mono8ToNv12Node::ConvertMono8ToNv12(
 
   // UV plane: fill with 128 (neutral chrominance)
   std::memset(nv12_msg->data.data() + y_size, 128, uv_size);
+
+  auto convert_end = std::chrono::steady_clock::now();
+  convert_time_ms = std::chrono::duration_cast<std::chrono::microseconds>(
+      convert_end - convert_start).count() / 1000.0;
 
   return nv12_msg;
 }
