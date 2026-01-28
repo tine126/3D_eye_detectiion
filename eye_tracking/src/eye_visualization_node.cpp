@@ -8,7 +8,7 @@
 EyeVisualizationNode::EyeVisualizationNode(const rclcpp::NodeOptions& options)
     : Node("eye_visualization_node", options) {
   // Declare parameters
-  this->declare_parameter<std::string>("image_topic", "/image_left");
+  this->declare_parameter<std::string>("image_topic", "/camera/left_ir/image_raw");
   this->declare_parameter<std::string>("landmarks_topic", "/face_landmarks_left");
   this->declare_parameter<std::string>("eye3d_topic", "/eye_positions_3d");
   this->declare_parameter<std::string>("output_topic", "/visualization");
