@@ -20,6 +20,9 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 
 # for different platforms
+# Force X5 platform for RDK X5
+set(PLATFORM_X5 ON)
+
 if(PLATFORM_X3)
   message("=> build for platform X3")
   set(PREFIX_PATH x3)

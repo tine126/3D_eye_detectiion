@@ -28,6 +28,7 @@ class RoiCache {
   std::optional<hbDNNRoi> GetExpandedRoi(int img_width, int img_height);
 
   bool IsValid() const;
+  int GetTrackId() const;
   void SetExpandScale(float scale) { expand_scale_ = scale; }
   void SetMaxAgeMs(int max_age_ms) { max_age_ms_ = max_age_ms; }
 

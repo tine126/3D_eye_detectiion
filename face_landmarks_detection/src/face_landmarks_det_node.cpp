@@ -254,10 +254,19 @@ int FaceLandmarksDetNode::PostProcess(const std::shared_ptr<DnnNodeOutput> &node
 
     // 3. pub ai msg
     ai_msgs::msg::PerceptionTargets::UniquePtr &msg = fac_landmarks_det_output->ai_msg;
+
+    // Check for nullptr before accessing size()
+    if (!fac_landmarks_det_output->valid_rois) {
+        RCLCPP_WARN(this->get_logger(), "valid_rois is nullptr, skip publishing");
+        return 0;
+    }
+
     if (face_landmarks_det_result->values.size() != fac_landmarks_det_output->valid_rois->size() || fac_landmarks_det_output->valid_rois->size() != fac_landmarks_det_output->valid_roi_idx.size())
     {
         RCLCPP_ERROR(this->get_logger(), "check face age det outputs fail");
-        ai_msg_publisher_->publish(std::move(msg));
+        if (msg) {
+            ai_msg_publisher_->publish(std::move(msg));
+        }
         return 0;
     }
 
@@ -621,6 +630,26 @@ void FaceLandmarksDetNode::RunPredict()
                 rois->push_back(cached_roi.value());
                 valid_roi_idx[0] = 0;
                 use_cached_roi = true;
+
+                // Create ai_msg for cached ROI
+                ai_msg = std::make_unique<ai_msgs::msg::PerceptionTargets>();
+                ai_msg->header = *dnn_output->image_msg_header;
+
+                // Add a target with face ROI
+                ai_msgs::msg::Target target;
+                target.set__type("person");
+                target.set__track_id(roi_cache_->GetTrackId());
+
+                ai_msgs::msg::Roi face_roi;
+                face_roi.type = "face";
+                face_roi.rect.x_offset = cached_roi.value().left;
+                face_roi.rect.y_offset = cached_roi.value().top;
+                face_roi.rect.width = cached_roi.value().right - cached_roi.value().left;
+                face_roi.rect.height = cached_roi.value().bottom - cached_roi.value().top;
+                target.rois.push_back(face_roi);
+
+                ai_msg->targets.push_back(target);
+
                 RCLCPP_INFO(this->get_logger(), "=> Using cached ROI");
             }
         }

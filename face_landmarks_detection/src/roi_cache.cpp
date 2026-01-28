@@ -63,3 +63,11 @@ std::optional<hbDNNRoi> RoiCache::GetExpandedRoi(int img_width, int img_height) 
 
   return expanded;
 }
+
+int RoiCache::GetTrackId() const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (cached_roi_.has_value()) {
+    return cached_roi_->track_id;
+  }
+  return -1;
+}
