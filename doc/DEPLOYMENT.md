@@ -155,8 +155,10 @@ vim ~/eye_tracking_ws/install/eye_tracking/share/eye_tracking/config/stereo_cali
 OrbbecSDK_ROS2已包含在项目仓库中，无需单独克隆。
 
 ```bash
-# 编译相机驱动
+# 编译相机驱动 (需要先编译消息包)
 cd ~/eye_tracking_ws
+colcon build --packages-select orbbec_camera_msgs
+
 colcon build --packages-select orbbec_camera --allow-overriding orbbec_camera
 ```
 
