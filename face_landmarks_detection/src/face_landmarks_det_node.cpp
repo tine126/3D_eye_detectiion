@@ -40,6 +40,7 @@ FaceLandmarksDetNode::FaceLandmarksDetNode(const std::string &node_name, const N
     model_file_name_ = this->declare_parameter<std::string>("model_file_name", model_file_name_);
     is_shared_mem_sub_ = this->declare_parameter<int>("is_shared_mem_sub", is_shared_mem_sub_);
     dump_render_img_ = this->declare_parameter<int>("dump_render_img", dump_render_img_);
+    timing_log_interval_ = this->declare_parameter<int>("timing_log_interval", timing_log_interval_);
     ai_msg_pub_topic_name_ = this->declare_parameter<std::string>("ai_msg_pub_topic_name", ai_msg_pub_topic_name_);
     ros_img_topic_name_ = this->declare_parameter<std::string>("ros_img_topic_name", ros_img_topic_name_);
 #ifdef SHARED_MEM_ENABLED
@@ -387,6 +388,19 @@ int FaceLandmarksDetNode::PostProcess(const std::shared_ptr<DnnNodeOutput> &node
         }
 
         ai_msg_publisher_->publish(std::move(ai_msg));
+
+        // Timing log
+        int count = ++timing_frame_count_;
+        if (timing_log_interval_ > 0 && count % timing_log_interval_ == 0) {
+            auto now_time = this->now();
+            auto msg_time = rclcpp::Time(fac_landmarks_det_output->image_msg_header->stamp);
+            double recv_delay_ms = (now_time - msg_time).seconds() * 1000.0;
+            RCLCPP_INFO(this->get_logger(),
+                "[face_lmk] %s recv=%.2fms infer=%.2fms",
+                fac_landmarks_det_output->image_msg_header->frame_id.c_str(),
+                recv_delay_ms,
+                static_cast<double>(node_output->rt_stat->infer_time_ms));
+        }
     }
     else
     {

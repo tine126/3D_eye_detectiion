@@ -219,6 +219,10 @@ private:
     // ROI cache for face tracking
     std::shared_ptr<RoiCache> roi_cache_ = std::make_shared<RoiCache>();
 
+    // Timing parameters
+    int timing_log_interval_ = 30;
+    std::atomic<int> timing_frame_count_{0};
+
     // Trigger publisher for body detection
     rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr trigger_pub_ = nullptr;
     std::string trigger_topic_name_ = "/trigger_body_detection_left";
