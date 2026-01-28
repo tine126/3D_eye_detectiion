@@ -107,13 +107,19 @@ vim ~/eye_tracking_ws/install/eye_tracking/share/eye_tracking/config/stereo_cali
 ```json
 {
     "left_camera": {
-        "fx": 600.0,
-        "fy": 600.0,
-        "cx": 640.0,
-        "cy": 400.0
+        "fx": 619.688049,
+        "fy": 619.688049,
+        "cx": 638.0,
+        "cy": 396.0
+    },
+    "right_camera": {
+        "fx": 619.688049,
+        "fy": 619.688049,
+        "cx": 638.0,
+        "cy": 396.0
     },
     "stereo": {
-        "baseline": 0.05
+        "baseline": 0.095
     }
 }
 ```
@@ -121,12 +127,10 @@ vim ~/eye_tracking_ws/install/eye_tracking/share/eye_tracking/config/stereo_cali
 ## 四、相机配置
 
 ### 4.1 OrbbecSDK_ROS2配置
-```bash
-# 安装奥比中光ROS2驱动
-cd ~/eye_tracking_ws/src
-git clone https://github.com/orbbec/OrbbecSDK_ROS2.git
+OrbbecSDK_ROS2已包含在项目仓库中，无需单独克隆。
 
-# 编译
+```bash
+# 编译相机驱动
 cd ~/eye_tracking_ws
 colcon build --packages-select orbbec_camera
 ```
