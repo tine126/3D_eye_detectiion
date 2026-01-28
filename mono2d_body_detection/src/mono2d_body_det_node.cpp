@@ -687,6 +687,10 @@ int Mono2dBodyDetNode::PostProcess(
             continue;
           }
         }
+        // Only publish face ROI, skip body/head/hand
+        if (roi_type != "face") {
+          continue;
+        }
         ai_msgs::msg::Target target;
         target.set__type("person");
         if (track_mode_ == 1) {
