@@ -64,6 +64,7 @@ def generate_launch_description():
             'model_file_name': body_detection_model,
             'ros_img_topic_name': '/image_left',
             'ai_msg_pub_topic_name': '/body_detection_left',
+            'track_mode': 0,  # Disable MOT tracking
         }],
         output='screen'
     )

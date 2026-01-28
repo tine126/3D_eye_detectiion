@@ -93,6 +93,7 @@ def generate_launch_description():
             'ros_img_topic_name': '/image_left',
             'ai_msg_pub_topic_name': '/body_detection_left',
             'trigger_interval': LaunchConfiguration('trigger_interval'),
+            'track_mode': 0,  # Disable MOT tracking
         }],
         output='screen'
     )
@@ -107,6 +108,7 @@ def generate_launch_description():
             'ros_img_topic_name': '/image_right',
             'ai_msg_pub_topic_name': '/body_detection_right',
             'trigger_interval': LaunchConfiguration('trigger_interval'),
+            'track_mode': 0,  # Disable MOT tracking
         }],
         output='screen'
     )

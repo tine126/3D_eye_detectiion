@@ -33,7 +33,7 @@ def generate_launch_description():
         "kps_model_type", default_value=TextSubstitution(text="0")
     )
     track_mode_launch_arg = DeclareLaunchArgument(
-        "kps_track_mode", default_value=TextSubstitution(text="1")
+        "kps_track_mode", default_value=TextSubstitution(text="0")
     )
     camera_type = os.getenv('CAM_TYPE')
     print("camera_type is ", camera_type)
