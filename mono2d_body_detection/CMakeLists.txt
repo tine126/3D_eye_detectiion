@@ -157,7 +157,7 @@ install(
 
 install(DIRECTORY
 ${PROJECT_SOURCE_DIR}/config/${PREFIX_PATH}/
-DESTINATION lib/${PROJECT_NAME}/config/
+DESTINATION lib/${PROJECT_NAME}/config/${PREFIX_PATH}/
 )
 
 install(FILES

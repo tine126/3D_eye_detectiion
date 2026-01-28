@@ -26,9 +26,10 @@ def generate_launch_description():
     # Model file paths (hardcoded absolute paths for workspace)
     # Note: get_package_share_directory returns system path /opt/tros/humble/share/...
     # We need to use workspace paths where models are actually installed
+    # Using X5 platform models for RDK X5
     workspace_install = os.path.expanduser('~/eye_tracking_ws/install')
     body_detection_model = os.path.join(
-        workspace_install, 'mono2d_body_detection/lib/mono2d_body_detection/config',
+        workspace_install, 'mono2d_body_detection/lib/mono2d_body_detection/config/x5',
         'multitask_body_head_face_hand_kps_960x544.hbm')
     face_landmarks_model = os.path.join(
         workspace_install, 'face_landmarks_detection/share/face_landmarks_detection/config',
