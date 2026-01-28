@@ -23,6 +23,8 @@
 #include "img_convert_utils.h"
 #include "face_landmarks_det_output_parser.h"
 #include "ai_msg_manage.h"
+#include "roi_cache.h"
+#include "std_msgs/msg/bool.hpp"
 #ifdef SHARED_MEM_ENABLED
 #include "hbm_img_msgs/msg/hbm_msg1080_p.hpp"
 #endif
@@ -213,6 +215,13 @@ private:
     // Perform inference in threads to avoid blocking IO channels and causing AI msg message loss
     std::mutex mtx_img_;
     std::condition_variable cv_img_;
+
+    // ROI cache for face tracking
+    std::shared_ptr<RoiCache> roi_cache_ = std::make_shared<RoiCache>();
+
+    // Trigger publisher for body detection
+    rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr trigger_pub_ = nullptr;
+    std::string trigger_topic_name_ = "/trigger_body_detection_left";
 };
 
 #endif

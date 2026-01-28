@@ -126,6 +126,9 @@ FaceLandmarksDetNode::FaceLandmarksDetNode(const std::string &node_name, const N
             RCLCPP_WARN(this->get_logger(), "Create subscription with topic_name: %s", ros_img_topic_name_.c_str());
             ros_img_subscription_ = this->create_subscription<sensor_msgs::msg::Image>(ros_img_topic_name_, 10, std::bind(&FaceLandmarksDetNode::RosImgProcess, this, std::placeholders::_1));
         }
+
+        // Create trigger publisher for body detection
+        trigger_pub_ = this->create_publisher<std_msgs::msg::Bool>(trigger_topic_name_, 10);
     }
 }
 
@@ -288,6 +291,17 @@ int FaceLandmarksDetNode::PostProcess(const std::shared_ptr<DnnNodeOutput> &node
                 {
                     rois.push_back(roi);
                     target.set__rois(rois);
+
+                    // Update ROI cache with current face detection
+                    if (roi_cache_) {
+                        roi_cache_->Update(
+                            roi.rect.x_offset,
+                            roi.rect.y_offset,
+                            roi.rect.x_offset + roi.rect.width,
+                            roi.rect.y_offset + roi.rect.height,
+                            in_target.track_id);
+                    }
+
                     // check face_roi_idx in valid_roi_idx
                     if (valid_roi_idx.find(face_roi_idx) == valid_roi_idx.end())
                     {
@@ -577,18 +591,43 @@ void FaceLandmarksDetNode::RunPredict()
         auto pyramid = img_msg.second;
         std::string ts = std::to_string(dnn_output->image_msg_header->stamp.sec) + "." + std::to_string(dnn_output->image_msg_header->stamp.nanosec);
 
-        // get roi from ai_msg
+        // get roi from ai_msg or cache
         std::shared_ptr<std::vector<hbDNNRoi>> rois = nullptr;
         std::map<size_t, size_t> valid_roi_idx;
         ai_msgs::msg::PerceptionTargets::UniquePtr ai_msg = nullptr;
-        if (ai_msg_manage_->GetTargetRois(dnn_output->image_msg_header->stamp, rois, valid_roi_idx, ai_msg,
-            std::bind(&FaceLandmarksDetNode::NormalizeRoi, this,
-            std::placeholders::_1, std::placeholders::_2,
-            expand_scale_, pyramid->width, pyramid->height),
-            200) < 0 || ai_msg == nullptr)
-        {
-            RCLCPP_INFO(this->get_logger(), "=> frame ts %s get face roi fail", ts.c_str());
-            continue;
+
+        // Priority 1: Try to use cached ROI
+        bool use_cached_roi = false;
+#ifdef BPU_LIBDNN
+        if (roi_cache_ && roi_cache_->IsValid()) {
+            auto cached_roi = roi_cache_->GetExpandedRoi(pyramid->width, pyramid->height);
+            if (cached_roi.has_value()) {
+                rois = std::make_shared<std::vector<hbDNNRoi>>();
+                rois->push_back(cached_roi.value());
+                valid_roi_idx[0] = 0;
+                use_cached_roi = true;
+                RCLCPP_DEBUG(this->get_logger(), "=> Using cached ROI");
+            }
+        }
+#endif
+
+        // Priority 2: Get ROI from body detection
+        if (!use_cached_roi) {
+            if (ai_msg_manage_->GetTargetRois(dnn_output->image_msg_header->stamp, rois, valid_roi_idx, ai_msg,
+                std::bind(&FaceLandmarksDetNode::NormalizeRoi, this,
+                std::placeholders::_1, std::placeholders::_2,
+                expand_scale_, pyramid->width, pyramid->height),
+                200) < 0 || ai_msg == nullptr)
+            {
+                // Priority 3: Trigger body detection
+                if (trigger_pub_) {
+                    std_msgs::msg::Bool trigger_msg;
+                    trigger_msg.data = true;
+                    trigger_pub_->publish(trigger_msg);
+                }
+                RCLCPP_INFO(this->get_logger(), "=> frame ts %s get face roi fail, triggered body detection", ts.c_str());
+                continue;
+            }
         }
         if (!rois || rois->empty() || rois->size() != valid_roi_idx.size())
         {
