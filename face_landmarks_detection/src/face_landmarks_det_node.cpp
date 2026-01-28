@@ -55,6 +55,7 @@ FaceLandmarksDetNode::FaceLandmarksDetNode(const std::string &node_name, const N
                                                  << "=> is_shared_mem_sub: " << is_shared_mem_sub_ << std::endl
                                                  << "=> dump_render_img: " << dump_render_img_ << std::endl
                                                  << "=> ai_msg_pub_topic_name: " << ai_msg_pub_topic_name_ << std::endl
+                                                 << "=> ai_msg_sub_topic_name: " << ai_msg_sub_topic_name_ << std::endl
                                                  << "=> ros_img_topic_name: " << ros_img_topic_name_ << std::endl
 #ifdef SHARED_MEM_ENABLED
                                                  << "=> sharedmem_img_topic_name: " << sharedmem_img_topic_name_
