@@ -662,6 +662,7 @@ int Mono2dBodyDetNode::PostProcess(
         for (const auto& box : roi.second) {
           MotBox out_box = box;
           out_box.id = 0;  // Default track ID
+          out_box.state_ = hobot_mot::DataState::VALID;  // Set valid state
           boxes.push_back(out_box);
         }
         out_rois[roi.first] = boxes;
