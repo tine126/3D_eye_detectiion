@@ -124,28 +124,14 @@ def generate_launch_description():
         output='screen'
     )
 
-    # 5. Eye tracking nodes
-    eye_position_2d = Node(
+    # 5. Eye tracking node (combined: 2D, 3D, visualization)
+    eye_tracking_node = Node(
         package='eye_tracking',
-        executable='eye_position_2d_node',
-        name='eye_position_2d_node',
-        output='screen'
-    )
-
-    eye_position_3d = Node(
-        package='eye_tracking',
-        executable='eye_position_3d_node',
-        name='eye_position_3d_node',
+        executable='eye_tracking_node',
+        name='eye_tracking_node',
         parameters=[{
             'calibration_file': LaunchConfiguration('calibration_file'),
         }],
-        output='screen'
-    )
-
-    eye_visualization = Node(
-        package='eye_tracking',
-        executable='eye_visualization_node',
-        name='eye_visualization_node',
         output='screen'
     )
 
@@ -167,7 +153,7 @@ def generate_launch_description():
 
     delayed_eye_tracking = TimerAction(
         period=8.0,
-        actions=[eye_position_2d, eye_position_3d, eye_visualization]
+        actions=[eye_tracking_node]
     )
 
     return LaunchDescription([
