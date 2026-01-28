@@ -614,7 +614,6 @@ void FaceLandmarksDetNode::RunPredict()
 
         // Priority 1: Try to use cached ROI
         bool use_cached_roi = false;
-#ifdef BPU_LIBDNN
         if (roi_cache_ && roi_cache_->IsValid()) {
             auto cached_roi = roi_cache_->GetExpandedRoi(pyramid->width, pyramid->height);
             if (cached_roi.has_value()) {
@@ -622,10 +621,9 @@ void FaceLandmarksDetNode::RunPredict()
                 rois->push_back(cached_roi.value());
                 valid_roi_idx[0] = 0;
                 use_cached_roi = true;
-                RCLCPP_DEBUG(this->get_logger(), "=> Using cached ROI");
+                RCLCPP_INFO(this->get_logger(), "=> Using cached ROI");
             }
         }
-#endif
 
         // Priority 2: Get ROI from body detection
         if (!use_cached_roi) {

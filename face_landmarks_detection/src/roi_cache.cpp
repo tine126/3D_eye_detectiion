@@ -27,7 +27,6 @@ bool RoiCache::IsValid() const {
   return age_ms <= max_age_ms_;
 }
 
-#ifdef BPU_LIBDNN
 std::optional<hbDNNRoi> RoiCache::GetExpandedRoi(int img_width, int img_height) {
   std::lock_guard<std::mutex> lock(mutex_);
   if (!cached_roi_.has_value()) {
@@ -56,6 +55,11 @@ std::optional<hbDNNRoi> RoiCache::GetExpandedRoi(int img_width, int img_height) 
   expanded.right = std::min(img_width - 1, cx + new_width / 2);
   expanded.bottom = std::min(img_height - 1, cy + new_height / 2);
 
+  // ROI's left and top must be even, right and bottom must be odd
+  expanded.left += (expanded.left % 2 == 0 ? 0 : 1);
+  expanded.top += (expanded.top % 2 == 0 ? 0 : 1);
+  expanded.right -= (expanded.right % 2 == 1 ? 0 : 1);
+  expanded.bottom -= (expanded.bottom % 2 == 1 ? 0 : 1);
+
   return expanded;
 }
-#endif

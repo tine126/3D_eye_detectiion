@@ -7,10 +7,7 @@
 #include <optional>
 #include <chrono>
 #include <mutex>
-
-#ifdef BPU_LIBDNN
-#include "hb_dnn.h"
-#endif
+#include "dnn_node/dnn_node.h"
 
 struct CachedRoi {
   int x1;
@@ -28,9 +25,7 @@ class RoiCache {
 
   void Update(int x1, int y1, int x2, int y2, int track_id);
 
-#ifdef BPU_LIBDNN
   std::optional<hbDNNRoi> GetExpandedRoi(int img_width, int img_height);
-#endif
 
   bool IsValid() const;
   void SetExpandScale(float scale) { expand_scale_ = scale; }
