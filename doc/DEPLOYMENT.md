@@ -52,7 +52,28 @@ cd ~/eye_tracking_ws/src
 git clone https://github.com/tine126/3D_eye_detectiion.git
 ```
 
-### 2.3 编译顺序
+### 2.3 项目结构
+克隆完成后，工作空间结构如下：
+
+```
+~/eye_tracking_ws/                      # ROS2工作空间根目录
+├── build/                              # 编译生成（colcon build后自动创建）
+├── install/                            # 安装目录（colcon build后自动创建）
+├── log/                                # 日志目录（colcon build后自动创建）
+└── src/                                # 源码目录
+    └── 3D_eye_detectiion/              # 克隆的仓库
+        ├── doc/                        # 文档
+        ├── eye_tracking/               # 人眼3D定位主包
+        ├── eye_tracking_msgs/          # 自定义消息定义
+        ├── face_landmarks_detection/   # 人脸关键点检测
+        ├── mono2d_body_detection/      # 人体检测
+        ├── mono8_to_nv12/              # 图像格式转换
+        └── OrbbecSDK_ROS2/             # 奥比中光相机驱动
+```
+
+> **注意**: 编译命令需要在 `~/eye_tracking_ws/` 目录下执行，colcon会递归扫描src目录下的所有ROS2包。
+
+### 2.4 编译顺序
 由于包之间存在依赖关系，需要按顺序编译：
 
 ```bash
@@ -64,15 +85,19 @@ colcon build --packages-select eye_tracking_msgs
 # 2. 刷新环境
 source install/setup.bash
 
-# 3. 编译其他包
-colcon build --packages-select \
-    mono8_to_nv12 \
-    mono2d_body_detection \
-    face_landmarks_detection \
-    eye_tracking
+# 3. 逐个编译其他包 (避免内存不足)
+colcon build --packages-select mono8_to_nv12
+
+colcon build --packages-select mono2d_body_detection \
+    --allow-overriding mono2d_body_detection
+
+colcon build --packages-select face_landmarks_detection \
+    --allow-overriding face_landmarks_detection
+
+colcon build --packages-select eye_tracking
 ```
 
-### 2.4 交叉编译 (可选)
+### 2.5 交叉编译 (可选)
 如果在x86主机上交叉编译：
 ```bash
 # 设置交叉编译工具链
@@ -132,7 +157,7 @@ OrbbecSDK_ROS2已包含在项目仓库中，无需单独克隆。
 ```bash
 # 编译相机驱动
 cd ~/eye_tracking_ws
-colcon build --packages-select orbbec_camera
+colcon build --packages-select orbbec_camera --allow-overriding orbbec_camera
 ```
 
 ### 4.2 相机参数配置
