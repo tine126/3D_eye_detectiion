@@ -21,31 +21,7 @@ find_package(OpenCV REQUIRED)
 
 include_directories(include)
 
-# Eye Position 2D Node
-add_executable(eye_position_2d_node
-  src/eye_position_2d_node.cpp
-)
-ament_target_dependencies(eye_position_2d_node
-  rclcpp ai_msgs eye_tracking_msgs
-)
-
-# Eye Position 3D Node
-add_executable(eye_position_3d_node
-  src/eye_position_3d_node.cpp
-)
-ament_target_dependencies(eye_position_3d_node
-  rclcpp eye_tracking_msgs message_filters
-)
-
-# Eye Visualization Node
-add_executable(eye_visualization_node
-  src/eye_visualization_node.cpp
-)
-ament_target_dependencies(eye_visualization_node
-  rclcpp sensor_msgs ai_msgs eye_tracking_msgs cv_bridge OpenCV
-)
-
-# Combined Node
+# Combined Node (all nodes in one executable)
 add_executable(eye_tracking_node
   src/main.cpp
   src/eye_position_2d_node.cpp
@@ -58,9 +34,6 @@ ament_target_dependencies(eye_tracking_node
 )
 
 install(TARGETS
-  eye_position_2d_node
-  eye_position_3d_node
-  eye_visualization_node
   eye_tracking_node
   RUNTIME DESTINATION lib/${PROJECT_NAME}
 )
