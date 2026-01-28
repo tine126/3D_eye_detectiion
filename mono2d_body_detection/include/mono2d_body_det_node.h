@@ -20,6 +20,8 @@
 #include <unordered_map>
 #include <vector>
 
+#include "std_msgs/msg/bool.hpp"
+
 #ifdef CV_BRIDGE_CPP
 #include <cv_bridge/cv_bridge.hpp>
 #else
@@ -146,7 +148,14 @@ class Mono2dBodyDetNode : public DnnNode {
 #endif
   
   int image_gap_ = 1;
- 
+
+  // Trigger strategy for frame skipping
+  int trigger_interval_ = 5;
+  std::atomic<int> frame_counter_left_{0};
+  std::atomic<int> frame_counter_right_{0};
+  std::atomic<bool> force_trigger_left_{true};
+  std::atomic<bool> force_trigger_right_{true};
+
   int is_sync_mode_ = 0;
 
   // 使用shared mem通信方式订阅图片
@@ -174,6 +183,12 @@ class Mono2dBodyDetNode : public DnnNode {
   // 和sensor_msgs::msg::CompressedImage格式扩展订阅压缩图
   std::string ros_img_topic_name_ = "/image_raw";
   void RosImgProcess(const sensor_msgs::msg::Image::ConstSharedPtr msg);
+
+  // External trigger subscriptions
+  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr trigger_left_sub_;
+  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr trigger_right_sub_;
+  void TriggerLeftCallback(const std_msgs::msg::Bool::ConstSharedPtr msg);
+  void TriggerRightCallback(const std_msgs::msg::Bool::ConstSharedPtr msg);
 
   std::shared_ptr<NodeOutputManage> node_output_manage_ptr_ =
       std::make_shared<NodeOutputManage>();

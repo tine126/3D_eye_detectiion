@@ -305,6 +305,7 @@ Mono2dBodyDetNode::Mono2dBodyDetNode(const NodeOptions& options)
   this->declare_parameter<std::string>("sharedmem_img_topic_name",
                                        sharedmem_img_topic_name_);
   this->declare_parameter<int>("image_gap", image_gap_);
+  this->declare_parameter<int>("trigger_interval", trigger_interval_);
   this->declare_parameter<int>("dump_render_img", dump_render_img_);
   this->declare_parameter<int>("track_mode", track_mode_);
   this->declare_parameter<int>("model_type", model_type_);
@@ -318,7 +319,8 @@ Mono2dBodyDetNode::Mono2dBodyDetNode(const NodeOptions& options)
                                        ros_img_topic_name_); 
   this->get_parameter<std::string>("sharedmem_img_topic_name",
                                        sharedmem_img_topic_name_); 
-  this->get_parameter<int>("image_gap", image_gap_);  
+  this->get_parameter<int>("image_gap", image_gap_);
+  this->get_parameter<int>("trigger_interval", trigger_interval_);
   this->get_parameter<int>("dump_render_img", dump_render_img_);
   this->get_parameter<int>("track_mode", track_mode_);
   this->get_parameter<int>("model_type", model_type_);
@@ -332,6 +334,7 @@ Mono2dBodyDetNode::Mono2dBodyDetNode(const NodeOptions& options)
       << "\n ai_msg_pub_topic_name: " << ai_msg_pub_topic_name_
       << "\n ros_img_topic_name: " << ros_img_topic_name_ 
       << "\n image_gap: " << image_gap_
+      << "\n trigger_interval: " << trigger_interval_
       << "\n dump_render_img: " << dump_render_img_
       << "\n track_mode: " << track_mode_
       << "\n model_type: " << model_type_;
@@ -450,6 +453,15 @@ Mono2dBodyDetNode::Mono2dBodyDetNode(const NodeOptions& options)
         std::bind(
             &Mono2dBodyDetNode::RosImgProcess, this, std::placeholders::_1));
   }
+
+  // Create external trigger subscriptions
+  trigger_left_sub_ = this->create_subscription<std_msgs::msg::Bool>(
+      "/trigger_body_detection_left", 10,
+      std::bind(&Mono2dBodyDetNode::TriggerLeftCallback, this, std::placeholders::_1));
+  trigger_right_sub_ = this->create_subscription<std_msgs::msg::Bool>(
+      "/trigger_body_detection_right", 10,
+      std::bind(&Mono2dBodyDetNode::TriggerRightCallback, this, std::placeholders::_1));
+
 #ifndef PLATFORM_X86
   for (const auto& config : hobot_mot_configs_) {
     hobot_mots_[config.first] = std::make_shared<HobotMot>(config.second);
@@ -841,11 +853,33 @@ void Mono2dBodyDetNode::RosImgProcess(
   if (!img_msg || !rclcpp::ok()) {
     return;
   }
-  static int gap_cnt = 0;
-  if (++gap_cnt < image_gap_) {
+
+  // Trigger strategy based on frame_id
+  bool is_left = (img_msg->header.frame_id.find("left") != std::string::npos);
+  auto& frame_counter = is_left ? frame_counter_left_ : frame_counter_right_;
+  auto& force_trigger = is_left ? force_trigger_left_ : force_trigger_right_;
+
+  bool should_detect = false;
+  int current_frame = ++frame_counter;
+
+  if (force_trigger.load()) {
+    should_detect = true;
+    force_trigger.store(false);
+  } else if (trigger_interval_ > 0 && current_frame % trigger_interval_ == 0) {
+    should_detect = true;
+  } else if (trigger_interval_ <= 0) {
+    // If trigger_interval is 0 or negative, use original image_gap logic
+    static int gap_cnt = 0;
+    if (++gap_cnt >= image_gap_) {
+      should_detect = true;
+      gap_cnt = 0;
+    }
+  }
+
+  if (!should_detect) {
     return;
   }
-  gap_cnt = 0;
+
   std::stringstream ss;
   ss << "RosImgProcess Recved img encoding: " << img_msg->encoding
      << ", h: " << img_msg->height << ", w: " << img_msg->width
@@ -1136,6 +1170,24 @@ int Mono2dBodyDetNode::DoMot(
   return 0;
 }
 #endif
+
+void Mono2dBodyDetNode::TriggerLeftCallback(
+    const std_msgs::msg::Bool::ConstSharedPtr msg) {
+  if (msg->data) {
+    force_trigger_left_.store(true);
+    RCLCPP_DEBUG(rclcpp::get_logger("mono2d_body_det"),
+                 "External trigger received for left camera");
+  }
+}
+
+void Mono2dBodyDetNode::TriggerRightCallback(
+    const std_msgs::msg::Bool::ConstSharedPtr msg) {
+  if (msg->data) {
+    force_trigger_right_.store(true);
+    RCLCPP_DEBUG(rclcpp::get_logger("mono2d_body_det"),
+                 "External trigger received for right camera");
+  }
+}
 
 #include <rclcpp_components/register_node_macro.hpp>
 RCLCPP_COMPONENTS_REGISTER_NODE(Mono2dBodyDetNode)
