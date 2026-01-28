@@ -33,8 +33,17 @@ ament_target_dependencies(eye_tracking_node
   message_filters cv_bridge OpenCV
 )
 
+# Main Node (simplified single-file version)
+add_executable(eye_tracking_main
+  src/eye_tracking_main.cpp
+)
+ament_target_dependencies(eye_tracking_main
+  rclcpp ai_msgs message_filters
+)
+
 install(TARGETS
   eye_tracking_node
+  eye_tracking_main
   RUNTIME DESTINATION lib/${PROJECT_NAME}
 )
 

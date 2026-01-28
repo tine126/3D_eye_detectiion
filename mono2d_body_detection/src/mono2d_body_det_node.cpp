@@ -667,19 +667,25 @@ int Mono2dBodyDetNode::PostProcess(
       }
       for (size_t idx = 0; idx < out_roi.second.size(); idx++) {
         const auto& rect = out_roi.second.at(idx);
+        // Check if ROI has invalid tracking state
+        bool is_invalid = false;
 #ifndef PLATFORM_X86
-        if (rect.id < 0 || hobot_mot::DataState::INVALID == rect.state_) 
+        is_invalid = (rect.id < 0 || hobot_mot::DataState::INVALID == rect.state_);
 #else
-        if (rect.id < 0 || DataState::INVALID == rect.state_) 
+        is_invalid = (rect.id < 0 || DataState::INVALID == rect.state_);
 #endif
-        {
+        if (is_invalid) {
           std::stringstream ss;
           ss << "invalid id, rect: " << rect.x1 << " " << rect.y1 << " "
              << rect.x2 << " " << rect.y2 << ", score: " << rect.score
              << ", state_: " << static_cast<int>(rect.state_);
           RCLCPP_INFO(
               rclcpp::get_logger("mono2d_body_det"), "%s", ss.str().c_str());
-          continue;
+          // For face ROI, still publish even if tracking is invalid
+          // This ensures face_landmarks_detection can receive face ROI
+          if (roi_type != "face") {
+            continue;
+          }
         }
         ai_msgs::msg::Target target;
         target.set__type("person");
@@ -1153,15 +1159,30 @@ int Mono2dBodyDetNode::DoMot(
     return -1;
   }
   for (auto& roi : in_rois) {
-    std::shared_ptr<HobotMot> hobot_mot = nullptr;
+    // Get ROI type
+    std::string roi_type = "";
     if (box_outputs_index_type_.find(roi.first) !=
         box_outputs_index_type_.end()) {
-      if (hobot_mots_.find(box_outputs_index_type_.at(roi.first)) !=
-          hobot_mots_.end()) {
-        hobot_mot = hobot_mots_.at(box_outputs_index_type_.at(roi.first));
-      } else {
-        continue;
+      roi_type = box_outputs_index_type_.at(roi.first);
+    }
+
+    // Skip MOT for face ROI - directly copy to output
+    if (roi_type == "face") {
+      std::vector<MotBox> face_boxes;
+      for (const auto& box : roi.second) {
+        MotBox out_box = box;
+        out_box.id = 0;  // Assign a default track ID
+        face_boxes.push_back(out_box);
       }
+      out_rois[roi.first] = face_boxes;
+      RCLCPP_DEBUG(rclcpp::get_logger("mono2d_body_det"),
+                   "Face ROI skip MOT, count: %zu", face_boxes.size());
+      continue;
+    }
+
+    std::shared_ptr<HobotMot> hobot_mot = nullptr;
+    if (hobot_mots_.find(roi_type) != hobot_mots_.end()) {
+      hobot_mot = hobot_mots_.at(roi_type);
     }
     if (!hobot_mot) {
       continue;
