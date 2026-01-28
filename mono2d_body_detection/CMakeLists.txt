@@ -54,6 +54,9 @@ if("${ROS_DISTRO}" STREQUAL "jazzy")
   add_definitions(-DCV_BRIDGE_CPP)
 endif()
 
+# Force X5 platform for RDK X5
+set(PLATFORM_X5 ON)
+
 if(PLATFORM_X3)
   message("build platform X3")
   add_definitions(-DBPU_LIBDNN)
