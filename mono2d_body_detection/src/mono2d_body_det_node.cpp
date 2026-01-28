@@ -841,7 +841,7 @@ int Mono2dBodyDetNode::PostProcess(
     int count = ++timing_frame_count_;
     if (timing_log_interval_ > 0 && count % timing_log_interval_ == 0) {
       auto now_time = this->now();
-      auto msg_time = rclcpp::Time(*fasterRcnn_output->image_msg_header);
+      auto msg_time = rclcpp::Time(fasterRcnn_output->image_msg_header->stamp);
       double recv_delay_ms = (now_time - msg_time).seconds() * 1000.0;
       RCLCPP_INFO(this->get_logger(),
           "[body_det] %s recv=%.2fms infer=%.2fms total=%.2fms",

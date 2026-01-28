@@ -89,11 +89,11 @@ void EyeVisualizationNode::PublishVisualization() {
       }
 
       // Draw landmarks
-      for (const auto& attr : target.attributes) {
-        if (attr.type == "landmarks_106") {
-          for (size_t i = 0; i < attr.points.size(); ++i) {
+      for (const auto& pt : target.points) {
+        if (pt.type == "face_kps") {
+          for (size_t i = 0; i < pt.point.size(); ++i) {
             cv::circle(img,
-                cv::Point(attr.points[i].point.x, attr.points[i].point.y),
+                cv::Point(pt.point[i].x, pt.point[i].y),
                 1, cv::Scalar(255, 0, 0), -1);
           }
         }

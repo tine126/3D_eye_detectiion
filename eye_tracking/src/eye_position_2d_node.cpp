@@ -118,42 +118,40 @@ eye_tracking_msgs::msg::EyePositions2D EyePosition2DNode::ExtractEyePositions(
   const auto& target = msg->targets[0];
   result.track_id = target.track_id;
 
-  // Find landmarks attribute
-  for (const auto& attr : target.attributes) {
-    if (attr.type != "landmarks_106") {
+  // Find face landmarks in target.points
+  for (const auto& pt : target.points) {
+    if (pt.type != "face_kps") {
       continue;
     }
 
-    const auto& points = attr.points;
+    const auto& points = pt.point;
     if (points.size() < 106) {
       RCLCPP_WARN(this->get_logger(), "Insufficient landmarks: %zu", points.size());
       return result;
     }
 
     // Calculate left eye center (points 33-41)
-    float left_x = 0, left_y = 0, left_conf = 0;
+    float left_x = 0, left_y = 0;
     int left_count = kLeftEyeEndIdx - kLeftEyeStartIdx + 1;
     for (int i = kLeftEyeStartIdx; i <= kLeftEyeEndIdx; ++i) {
-      left_x += points[i].point.x;
-      left_y += points[i].point.y;
-      left_conf += points[i].confidence;
+      left_x += points[i].x;
+      left_y += points[i].y;
     }
     result.left_eye.x = left_x / left_count;
     result.left_eye.y = left_y / left_count;
-    result.left_eye.confidence = left_conf / left_count;
+    result.left_eye.confidence = 1.0f;
     result.left_eye.valid = true;
 
     // Calculate right eye center (points 42-50)
-    float right_x = 0, right_y = 0, right_conf = 0;
+    float right_x = 0, right_y = 0;
     int right_count = kRightEyeEndIdx - kRightEyeStartIdx + 1;
     for (int i = kRightEyeStartIdx; i <= kRightEyeEndIdx; ++i) {
-      right_x += points[i].point.x;
-      right_y += points[i].point.y;
-      right_conf += points[i].confidence;
+      right_x += points[i].x;
+      right_y += points[i].y;
     }
     result.right_eye.x = right_x / right_count;
     result.right_eye.y = right_y / right_count;
-    result.right_eye.confidence = right_conf / right_count;
+    result.right_eye.confidence = 1.0f;
     result.right_eye.valid = true;
 
     break;
