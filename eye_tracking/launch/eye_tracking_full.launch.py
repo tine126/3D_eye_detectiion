@@ -23,6 +23,17 @@ def generate_launch_description():
     mono8_to_nv12_pkg = get_package_share_directory('mono8_to_nv12')
     orbbec_camera_pkg = get_package_share_directory('orbbec_camera')
 
+    # Model file paths (hardcoded absolute paths for workspace)
+    # Note: get_package_share_directory returns system path /opt/tros/humble/share/...
+    # We need to use workspace paths where models are actually installed
+    workspace_install = os.path.expanduser('~/eye_tracking_ws/install')
+    body_detection_model = os.path.join(
+        workspace_install, 'mono2d_body_detection/lib/mono2d_body_detection/config',
+        'multitask_body_head_face_hand_kps_960x544.hbm')
+    face_landmarks_model = os.path.join(
+        workspace_install, 'face_landmarks_detection/share/face_landmarks_detection/config',
+        'faceLandmark106pts.hbm')
+
     # Default calibration file
     default_calib = os.path.join(eye_tracking_pkg, 'config', 'stereo_calibration.json')
 
@@ -77,6 +88,7 @@ def generate_launch_description():
         name='body_detection_left',
         parameters=[{
             'is_shared_mem_sub': 0,
+            'model_file_name': body_detection_model,
             'ros_img_topic_name': '/image_left',
             'ai_msg_pub_topic_name': '/body_detection_left',
             'trigger_interval': LaunchConfiguration('trigger_interval'),
@@ -90,6 +102,7 @@ def generate_launch_description():
         name='body_detection_right',
         parameters=[{
             'is_shared_mem_sub': 0,
+            'model_file_name': body_detection_model,
             'ros_img_topic_name': '/image_right',
             'ai_msg_pub_topic_name': '/body_detection_right',
             'trigger_interval': LaunchConfiguration('trigger_interval'),
@@ -104,6 +117,7 @@ def generate_launch_description():
         name='face_landmarks_left',
         parameters=[{
             'is_shared_mem_sub': 0,
+            'model_file_name': face_landmarks_model,
             'ros_img_topic_name': '/image_left',
             'ai_msg_sub_topic_name': '/body_detection_left',
             'ai_msg_pub_topic_name': '/face_landmarks_left',
@@ -117,6 +131,7 @@ def generate_launch_description():
         name='face_landmarks_right',
         parameters=[{
             'is_shared_mem_sub': 0,
+            'model_file_name': face_landmarks_model,
             'ros_img_topic_name': '/image_right',
             'ai_msg_sub_topic_name': '/body_detection_right',
             'ai_msg_pub_topic_name': '/face_landmarks_right',
