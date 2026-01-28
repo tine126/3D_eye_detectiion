@@ -156,6 +156,10 @@ class Mono2dBodyDetNode : public DnnNode {
   std::atomic<bool> force_trigger_left_{true};
   std::atomic<bool> force_trigger_right_{true};
 
+  // Timing parameters
+  int timing_log_interval_ = 30;
+  std::atomic<int> timing_frame_count_{0};
+
   int is_sync_mode_ = 0;
 
   // 使用shared mem通信方式订阅图片

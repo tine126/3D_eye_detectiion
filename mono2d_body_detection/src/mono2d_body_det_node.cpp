@@ -306,6 +306,7 @@ Mono2dBodyDetNode::Mono2dBodyDetNode(const NodeOptions& options)
                                        sharedmem_img_topic_name_);
   this->declare_parameter<int>("image_gap", image_gap_);
   this->declare_parameter<int>("trigger_interval", trigger_interval_);
+  this->declare_parameter<int>("timing_log_interval", timing_log_interval_);
   this->declare_parameter<int>("dump_render_img", dump_render_img_);
   this->declare_parameter<int>("track_mode", track_mode_);
   this->declare_parameter<int>("model_type", model_type_);
@@ -321,6 +322,7 @@ Mono2dBodyDetNode::Mono2dBodyDetNode(const NodeOptions& options)
                                        sharedmem_img_topic_name_); 
   this->get_parameter<int>("image_gap", image_gap_);
   this->get_parameter<int>("trigger_interval", trigger_interval_);
+  this->get_parameter<int>("timing_log_interval", timing_log_interval_);
   this->get_parameter<int>("dump_render_img", dump_render_img_);
   this->get_parameter<int>("track_mode", track_mode_);
   this->get_parameter<int>("model_type", model_type_);
@@ -834,6 +836,20 @@ int Mono2dBodyDetNode::PostProcess(
       Render(fasterRcnn_output->pyramid, pub_data);
     }
     msg_publisher_->publish(std::move(pub_data));
+
+    // Timing log
+    int count = ++timing_frame_count_;
+    if (timing_log_interval_ > 0 && count % timing_log_interval_ == 0) {
+      auto now_time = this->now();
+      auto msg_time = rclcpp::Time(*fasterRcnn_output->image_msg_header);
+      double recv_delay_ms = (now_time - msg_time).seconds() * 1000.0;
+      RCLCPP_INFO(this->get_logger(),
+          "[body_det] %s recv=%.2fms infer=%.2fms total=%.2fms",
+          fasterRcnn_output->image_msg_header->frame_id.c_str(),
+          recv_delay_ms,
+          static_cast<double>(node_output->rt_stat->infer_time_ms),
+          recv_delay_ms);
+    }
   }
   return 0;
 }
