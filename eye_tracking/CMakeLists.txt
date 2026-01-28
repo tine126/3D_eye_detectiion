@@ -1,0 +1,76 @@
+cmake_minimum_required(VERSION 3.5)
+project(eye_tracking)
+
+# Default to C++14
+if(NOT CMAKE_CXX_STANDARD)
+  set(CMAKE_CXX_STANDARD 14)
+endif()
+
+if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  add_compile_options(-Wall -Wextra -Wpedantic)
+endif()
+
+find_package(ament_cmake REQUIRED)
+find_package(rclcpp REQUIRED)
+find_package(sensor_msgs REQUIRED)
+find_package(ai_msgs REQUIRED)
+find_package(eye_tracking_msgs REQUIRED)
+find_package(message_filters REQUIRED)
+find_package(cv_bridge REQUIRED)
+find_package(OpenCV REQUIRED)
+
+include_directories(include)
+
+# Eye Position 2D Node
+add_executable(eye_position_2d_node
+  src/eye_position_2d_node.cpp
+)
+ament_target_dependencies(eye_position_2d_node
+  rclcpp ai_msgs eye_tracking_msgs
+)
+
+# Eye Position 3D Node
+add_executable(eye_position_3d_node
+  src/eye_position_3d_node.cpp
+)
+ament_target_dependencies(eye_position_3d_node
+  rclcpp eye_tracking_msgs message_filters
+)
+
+# Eye Visualization Node
+add_executable(eye_visualization_node
+  src/eye_visualization_node.cpp
+)
+ament_target_dependencies(eye_visualization_node
+  rclcpp sensor_msgs ai_msgs eye_tracking_msgs cv_bridge OpenCV
+)
+
+# Combined Node
+add_executable(eye_tracking_node
+  src/main.cpp
+  src/eye_position_2d_node.cpp
+  src/eye_position_3d_node.cpp
+  src/eye_visualization_node.cpp
+)
+ament_target_dependencies(eye_tracking_node
+  rclcpp sensor_msgs ai_msgs eye_tracking_msgs
+  message_filters cv_bridge OpenCV
+)
+
+install(TARGETS
+  eye_position_2d_node
+  eye_position_3d_node
+  eye_visualization_node
+  eye_tracking_node
+  RUNTIME DESTINATION lib/${PROJECT_NAME}
+)
+
+install(DIRECTORY launch/
+  DESTINATION share/${PROJECT_NAME}/launch
+)
+
+install(DIRECTORY config/
+  DESTINATION share/${PROJECT_NAME}/config
+)
+
+ament_package()
