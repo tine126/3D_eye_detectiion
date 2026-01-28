@@ -9,6 +9,8 @@
 #include <eye_tracking_msgs/msg/eye_positions2_d.hpp>
 #include <string>
 #include <memory>
+#include <chrono>
+#include <atomic>
 
 class EyePosition2DNode : public rclcpp::Node {
  public:
@@ -41,6 +43,11 @@ class EyePosition2DNode : public rclcpp::Node {
   std::string right_input_topic_;
   std::string left_output_topic_;
   std::string right_output_topic_;
+
+  // Timing parameters
+  int timing_log_interval_ = 30;
+  std::atomic<int> left_frame_count_{0};
+  std::atomic<int> right_frame_count_{0};
 };
 
 #endif  // EYE_TRACKING__EYE_POSITION_2D_NODE_H_

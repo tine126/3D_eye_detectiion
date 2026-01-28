@@ -15,12 +15,14 @@ EyePosition3DNode::EyePosition3DNode(const rclcpp::NodeOptions& options)
   this->declare_parameter<std::string>("right_input_topic", "/eye_positions_right");
   this->declare_parameter<std::string>("output_topic", "/eye_positions_3d");
   this->declare_parameter<std::string>("calibration_file", "");
+  this->declare_parameter<int>("timing_log_interval", 30);
 
   // Get parameters
   this->get_parameter("left_input_topic", left_input_topic_);
   this->get_parameter("right_input_topic", right_input_topic_);
   this->get_parameter("output_topic", output_topic_);
   this->get_parameter("calibration_file", calibration_file_);
+  this->get_parameter("timing_log_interval", timing_log_interval_);
 
   // Load calibration if provided
   if (!calibration_file_.empty()) {
@@ -81,6 +83,19 @@ void EyePosition3DNode::LoadCalibration(const std::string& config_path) {
 void EyePosition3DNode::SyncCallback(
     const eye_tracking_msgs::msg::EyePositions2D::ConstSharedPtr& left_msg,
     const eye_tracking_msgs::msg::EyePositions2D::ConstSharedPtr& right_msg) {
+  auto callback_start = std::chrono::steady_clock::now();
+
+  // Calculate receive delays and sync wait time
+  auto now_time = this->now();
+  auto left_msg_time = rclcpp::Time(left_msg->header.stamp);
+  auto right_msg_time = rclcpp::Time(right_msg->header.stamp);
+  double left_recv_ms = (now_time - left_msg_time).seconds() * 1000.0;
+  double right_recv_ms = (now_time - right_msg_time).seconds() * 1000.0;
+  double sync_wait_ms = std::abs(left_recv_ms - right_recv_ms);
+
+  // Calculate 3D positions
+  auto calc_start = std::chrono::steady_clock::now();
+
   eye_tracking_msgs::msg::EyePositions3D result;
   result.header = left_msg->header;
   result.track_id = left_msg->track_id;
@@ -124,4 +139,27 @@ void EyePosition3DNode::SyncCallback(
   }
 
   pub_->publish(result);
+
+  // Calculate timing
+  auto calc_end = std::chrono::steady_clock::now();
+  double calc_time_ms = std::chrono::duration_cast<std::chrono::microseconds>(
+      calc_end - calc_start).count() / 1000.0;
+
+  auto callback_end = std::chrono::steady_clock::now();
+  double total_time_ms = std::chrono::duration_cast<std::chrono::microseconds>(
+      callback_end - callback_start).count() / 1000.0;
+
+  // End-to-end delay (from original image capture to 3D output)
+  double e2e_total_ms = (now_time - left_msg_time).seconds() * 1000.0;
+
+  // Log timing
+  int count = ++frame_count_;
+  if (timing_log_interval_ > 0 && count % timing_log_interval_ == 0) {
+    RCLCPP_INFO(this->get_logger(),
+        "[eye_3d] left_recv=%.2fms right_recv=%.2fms sync_wait=%.2fms calc=%.3fms total=%.3fms",
+        left_recv_ms, right_recv_ms, sync_wait_ms, calc_time_ms, total_time_ms);
+    RCLCPP_INFO(this->get_logger(),
+        "[eye_3d] E2E: total=%.2fms left_chain=%.2fms right_chain=%.2fms",
+        e2e_total_ms, left_recv_ms, right_recv_ms);
+  }
 }

@@ -12,6 +12,8 @@
 #include <eye_tracking_msgs/msg/eye_positions3_d.hpp>
 #include <string>
 #include <memory>
+#include <chrono>
+#include <atomic>
 
 class EyePosition3DNode : public rclcpp::Node {
  public:
@@ -50,6 +52,10 @@ class EyePosition3DNode : public rclcpp::Node {
   std::string right_input_topic_;
   std::string output_topic_;
   std::string calibration_file_;
+
+  // Timing parameters
+  int timing_log_interval_ = 30;
+  std::atomic<int> frame_count_{0};
 };
 
 #endif  // EYE_TRACKING__EYE_POSITION_3D_NODE_H_
