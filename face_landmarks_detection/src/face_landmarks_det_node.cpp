@@ -42,6 +42,7 @@ FaceLandmarksDetNode::FaceLandmarksDetNode(const std::string &node_name, const N
     dump_render_img_ = this->declare_parameter<int>("dump_render_img", dump_render_img_);
     timing_log_interval_ = this->declare_parameter<int>("timing_log_interval", timing_log_interval_);
     ai_msg_pub_topic_name_ = this->declare_parameter<std::string>("ai_msg_pub_topic_name", ai_msg_pub_topic_name_);
+    ai_msg_sub_topic_name_ = this->declare_parameter<std::string>("ai_msg_sub_topic_name", ai_msg_sub_topic_name_);
     ros_img_topic_name_ = this->declare_parameter<std::string>("ros_img_topic_name", ros_img_topic_name_);
 #ifdef SHARED_MEM_ENABLED
     sharedmem_img_topic_name_ = this->declare_parameter<std::string>("sharedmem_img_topic_name", sharedmem_img_topic_name_);
