@@ -3,7 +3,8 @@
 
 #include "eye_tracking/eye_position_3d_node.h"
 #include <fstream>
-#include <nlohmann/json.hpp>
+#include <sstream>
+#include <regex>
 
 EyePosition3DNode::EyePosition3DNode(const rclcpp::NodeOptions& options)
     : Node("eye_position_3d_node", options),
@@ -49,18 +50,28 @@ void EyePosition3DNode::LoadCalibration(const std::string& config_path) {
       RCLCPP_WARN(this->get_logger(), "Cannot open calibration file: %s", config_path.c_str());
       return;
     }
-    nlohmann::json config = nlohmann::json::parse(file);
 
-    if (config.contains("left_camera")) {
-      auto& cam = config["left_camera"];
-      fx_ = cam.value("fx", fx_);
-      fy_ = cam.value("fy", fy_);
-      cx_ = cam.value("cx", cx_);
-      cy_ = cam.value("cy", cy_);
-    }
-    if (config.contains("stereo")) {
-      baseline_ = config["stereo"].value("baseline", baseline_);
-    }
+    // Read entire file content
+    std::stringstream buffer;
+    buffer << file.rdbuf();
+    std::string content = buffer.str();
+
+    // Simple regex-based JSON parsing
+    auto parse_double = [&content](const std::string& key, double default_val) -> double {
+      std::regex pattern("\"" + key + "\"\\s*:\\s*([0-9.\\-]+)");
+      std::smatch match;
+      if (std::regex_search(content, match, pattern) && match.size() > 1) {
+        return std::stod(match[1].str());
+      }
+      return default_val;
+    };
+
+    fx_ = parse_double("fx", fx_);
+    fy_ = parse_double("fy", fy_);
+    cx_ = parse_double("cx", cx_);
+    cy_ = parse_double("cy", cy_);
+    baseline_ = parse_double("baseline", baseline_);
+
     RCLCPP_INFO(this->get_logger(), "Loaded calibration from %s", config_path.c_str());
   } catch (const std::exception& e) {
     RCLCPP_ERROR(this->get_logger(), "Failed to load calibration: %s", e.what());

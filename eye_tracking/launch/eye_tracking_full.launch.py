@@ -63,7 +63,11 @@ def generate_launch_description():
     format_convert_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(mono8_to_nv12_pkg, 'launch', 'mono8_to_nv12.launch.py')
-        )
+        ),
+        launch_arguments={
+            'left_input_topic': '/camera/left_ir/image_raw',
+            'right_input_topic': '/camera/right_ir/image_raw',
+        }.items()
     )
 
     # 3. Body detection nodes (left and right)

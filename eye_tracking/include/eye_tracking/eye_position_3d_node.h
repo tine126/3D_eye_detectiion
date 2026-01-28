@@ -26,11 +26,11 @@ class EyePosition3DNode : public rclcpp::Node {
   void LoadCalibration(const std::string& config_path);
 
   // Stereo calibration parameters
-  double fx_ = 600.0;
-  double fy_ = 600.0;
-  double cx_ = 640.0;
-  double cy_ = 400.0;
-  double baseline_ = 0.05;
+  double fx_ = 619.688049;
+  double fy_ = 619.688049;
+  double cx_ = 638.0;
+  double cy_ = 396.0;
+  double baseline_ = 0.095;
 
   // Sync policy
   using SyncPolicy = message_filters::sync_policies::ApproximateTime<
