@@ -3734,6 +3734,18 @@ void OBCameraNode::onNewFrameCallback(const std::shared_ptr<ob::Frame> &frame,
     fps_delay_status_color_->tick(frame_timestamp);
   } else if (stream_index == DEPTH) {
     fps_delay_status_depth_->tick(frame_timestamp);
+  } else if (stream_index == INFRA1 || stream_index == INFRA2) {
+    // Timing log for IR frames
+    auto now_us = std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    double sdk_delay_ms = (now_us - frame_timestamp) / 1000.0;
+    static int ir_frame_count = 0;
+    static int timing_log_interval = 30;
+    if (++ir_frame_count % timing_log_interval == 0) {
+      RCLCPP_INFO(logger_, "[orbbec_camera] %s frame_ts=%ld sdk_delay=%.2fms",
+          stream_index == INFRA1 ? "LEFT_IR" : "RIGHT_IR",
+          frame_timestamp, sdk_delay_ms);
+    }
   }
   image_publishers_[stream_index]->publish(std::move(image_msg));
 }
