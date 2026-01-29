@@ -91,10 +91,11 @@ EyePosition3DNode::EyePosition3DNode(
     }
 
     // ========== 创建message_filters订阅和同步器 ==========
+    // 使用 SensorDataQoS (BEST_EFFORT) 与 eye_position_publisher 匹配
     left_eye_sub_ = std::make_shared<message_filters::Subscriber<EyePositionsMsg>>(
-        this, left_eye_topic_, rmw_qos_profile_default);
+        this, left_eye_topic_, rmw_qos_profile_sensor_data);
     right_eye_sub_ = std::make_shared<message_filters::Subscriber<EyePositionsMsg>>(
-        this, right_eye_topic_, rmw_qos_profile_default);
+        this, right_eye_topic_, rmw_qos_profile_sensor_data);
 
     sync_ = std::make_shared<Synchronizer>(SyncPolicy(10), *left_eye_sub_, *right_eye_sub_);
     sync_->setMaxIntervalDuration(rclcpp::Duration::from_seconds(0.1));  // 100ms
