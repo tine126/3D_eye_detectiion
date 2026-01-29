@@ -831,26 +831,17 @@ void OBCameraNode::setupDevices() {
       TRY_TO_SET_PROPERTY(setIntProperty, OB_PROP_IR_BRIGHTNESS_INT, ir_brightness_);
     }
   }
-  if (ir_exposure_ != -1 &&
-      device_->isPropertySupported(OB_PROP_IR_EXPOSURE_INT, OB_PERMISSION_WRITE)) {
-    auto range = device_->getIntPropertyRange(OB_PROP_IR_EXPOSURE_INT);
-    if (ir_exposure_ < range.min || ir_exposure_ > range.max) {
-      RCLCPP_ERROR(logger_, "ir exposure value is out of range[%d,%d], please check the value",
-                   range.min, range.max);
-    } else {
-      RCLCPP_INFO_STREAM(logger_, "Setting IR exposure to " << ir_exposure_);
-      TRY_TO_SET_PROPERTY(setIntProperty, OB_PROP_IR_EXPOSURE_INT, ir_exposure_);
-    }
+  // Fixed IR exposure: 4000us (4ms)
+  constexpr int kFixedIrExposure = 4000;
+  if (device_->isPropertySupported(OB_PROP_IR_EXPOSURE_INT, OB_PERMISSION_WRITE)) {
+    RCLCPP_INFO_STREAM(logger_, "Setting fixed IR exposure to " << kFixedIrExposure << "us (4ms)");
+    TRY_TO_SET_PROPERTY(setIntProperty, OB_PROP_IR_EXPOSURE_INT, kFixedIrExposure);
   }
-  if (ir_gain_ != -1 && device_->isPropertySupported(OB_PROP_IR_GAIN_INT, OB_PERMISSION_WRITE)) {
-    auto range = device_->getIntPropertyRange(OB_PROP_IR_GAIN_INT);
-    if (ir_gain_ < range.min || ir_gain_ > range.max) {
-      RCLCPP_ERROR(logger_, "ir gain value is out of range[%d,%d], please check the value",
-                   range.min, range.max);
-    } else {
-      RCLCPP_INFO_STREAM(logger_, "Setting IR gain to " << ir_gain_);
-      TRY_TO_SET_PROPERTY(setIntProperty, OB_PROP_IR_GAIN_INT, ir_gain_);
-    }
+  // Fixed IR gain: 100
+  constexpr int kFixedIrGain = 100;
+  if (device_->isPropertySupported(OB_PROP_IR_GAIN_INT, OB_PERMISSION_WRITE)) {
+    RCLCPP_INFO_STREAM(logger_, "Setting fixed IR gain to " << kFixedIrGain);
+    TRY_TO_SET_PROPERTY(setIntProperty, OB_PROP_IR_GAIN_INT, kFixedIrGain);
   }
   if (device_->isPropertySupported(OB_PROP_IR_LONG_EXPOSURE_BOOL, OB_PERMISSION_WRITE)) {
     RCLCPP_INFO_STREAM(logger_,
