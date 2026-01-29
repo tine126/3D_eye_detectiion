@@ -104,7 +104,7 @@ class Mono2dBodyDetNode : public DnnNode {
       sharedmem_img_subscription_ = nullptr;
 
   // ========== 发布配置 ==========
-  std::string ai_msg_pub_topic_name_ = "hobot_mono2d_body_detection";
+  std::string ai_msg_pub_topic_name_ = "/hobot_mono2d_body_detection";
   rclcpp::Publisher<ai_msgs::msg::PerceptionTargets>::SharedPtr msg_publisher_ = nullptr;
 
   // ========== 内部组件 ==========

@@ -1,19 +1,13 @@
 // Copyright (c) 2024，D-Robotics.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 精简版：仅保留在线模式
 
 #ifndef AI_MSG_MANAGE_H
 #define AI_MSG_MANAGE_H
+
+#include <queue>
+#include <unordered_map>
+#include <mutex>
+#include <condition_variable>
 
 #include "rclcpp/rclcpp.hpp"
 #include "ai_msgs/msg/perception_targets.hpp"
@@ -21,31 +15,23 @@
 
 using ai_msgs::msg::PerceptionTargets;
 
-/**
- * @brief priority queue comparator
- */
+// 时间戳比较器
 struct compare_msg
 {
-    bool operator()(const std_msgs::msg::Header::_stamp_type m1, const std_msgs::msg::Header::_stamp_type m2)
+    bool operator()(const std_msgs::msg::Header::_stamp_type m1,
+                    const std_msgs::msg::Header::_stamp_type m2)
     {
         return ((m1.sec > m2.sec) || ((m1.sec == m2.sec) && (m1.nanosec > m2.nanosec)));
     }
 };
 
-/**
- * @brief cache ai msg for face landmarks detection
- */
+// AI消息缓存
 class FaceLandmarksDetFeedCache
 {
 public:
-    explicit FaceLandmarksDetFeedCache(const rclcpp::Logger &logger, int cache_lint_len = 20) : logger_(logger), cache_limt_len_(cache_lint_len)
-    {
-    }
-    ~FaceLandmarksDetFeedCache() = default;
+    explicit FaceLandmarksDetFeedCache(const rclcpp::Logger &logger, size_t cache_limit = 20)
+        : logger_(logger), cache_limit_(cache_limit) {}
 
-    /**
-     * @brief cache ai msg
-     */
     int Feed(const ai_msgs::msg::PerceptionTargets::ConstSharedPtr &msg)
     {
         ai_msgs::msg::PerceptionTargets::UniquePtr ai_msg(new ai_msgs::msg::PerceptionTargets());
@@ -54,122 +40,121 @@ public:
         ai_msg->set__targets(msg->targets);
         ai_msg->set__disappeared_targets(msg->disappeared_targets);
         ai_msg->set__perfs(msg->perfs);
-        std::string ts = std::to_string(msg->header.stamp.sec) + "." + std::to_string(msg->header.stamp.nanosec);
-        RCLCPP_DEBUG(logger_, "Feed ts %s", ts.c_str());
+
+        std::string ts = std::to_string(msg->header.stamp.sec) + "." +
+                         std::to_string(msg->header.stamp.nanosec);
 
         std::unique_lock<std::mutex> lg(cache_mtx_);
-        // check whether the maximum length is exceeded
-        if (recved_aimsg_cache_.size() > cache_limt_len_)
+        // 超限清理
+        while (recved_aimsg_cache_.size() >= cache_limit_)
         {
-            // delete ai msg with minimum timestamp
-            std::string top_ts = std::to_string(recved_aimsg_ts_.top().sec) + "." + std::to_string(recved_aimsg_ts_.top().nanosec);
-            RCLCPP_WARN(logger_, "Ai msg cache len: %ld exceeds limit: %ld, erase ai ts: %s", recved_aimsg_cache_.size(), cache_limt_len_, top_ts.data());
-            recved_aimsg_cache_.erase(top_ts);
-            recved_aimsg_ts_.pop();
-        }
-        // check whether the maximum length is exceeded
-        if (recved_aimsg_ts_.size() > cache_limt_len_)
-        {
-            // delete ai msg with minimum timestamp
-            std::string top_ts = std::to_string(recved_aimsg_ts_.top().sec) + "." + std::to_string(recved_aimsg_ts_.top().nanosec);
-            RCLCPP_WARN(logger_, "Ts cache len: %ld exceeds limit: %ld, erase ts: %s", recved_aimsg_ts_.size(), cache_limt_len_, top_ts.data());
+            auto top_ts = std::to_string(recved_aimsg_ts_.top().sec) + "." +
+                          std::to_string(recved_aimsg_ts_.top().nanosec);
             recved_aimsg_cache_.erase(top_ts);
             recved_aimsg_ts_.pop();
         }
 
-        // enter queue
         recved_aimsg_cache_[ts] = std::move(ai_msg);
         recved_aimsg_ts_.push(msg->header.stamp);
-        RCLCPP_DEBUG(logger_, "top ts: %u %u, cache size: %ld, ts size: %ld", recved_aimsg_ts_.top().sec, recved_aimsg_ts_.top().nanosec, recved_aimsg_cache_.size(), recved_aimsg_ts_.size());
         cache_cv_.notify_one();
         return 0;
     }
 
-    /**
-     * @brief get ai msg by timestamp
-     */
-    ai_msgs::msg::PerceptionTargets::UniquePtr Get(const std_msgs::msg::Header::_stamp_type &msg_ts, int time_out_ms = 1000)
+    ai_msgs::msg::PerceptionTargets::UniquePtr Get(
+        const std_msgs::msg::Header::_stamp_type &msg_ts, int timeout_ms = 200)
     {
         std::string ts = std::to_string(msg_ts.sec) + "." + std::to_string(msg_ts.nanosec);
-        RCLCPP_DEBUG(logger_, "Get ts %s", ts.c_str());
+        ai_msgs::msg::PerceptionTargets::UniquePtr result = nullptr;
 
-        ai_msgs::msg::PerceptionTargets::UniquePtr feed_predict = nullptr;
-
-        // get ai msg
         std::unique_lock<std::mutex> lg(cache_mtx_);
-        cache_cv_.wait_for(lg, std::chrono::milliseconds(time_out_ms), [&]() { return recved_aimsg_cache_.find(ts) != recved_aimsg_cache_.end(); });
+        cache_cv_.wait_for(lg, std::chrono::milliseconds(timeout_ms),
+            [&]() { return recved_aimsg_cache_.find(ts) != recved_aimsg_cache_.end(); });
+
         if (recved_aimsg_cache_.find(ts) != recved_aimsg_cache_.end())
         {
-            feed_predict = std::move(recved_aimsg_cache_.at(ts));
+            result = std::move(recved_aimsg_cache_.at(ts));
             recved_aimsg_cache_.erase(ts);
 
-            RCLCPP_DEBUG(logger_,
-                         "find ts %s success, recved_aimsg_ts_ top ts: %u %u, "
-                         "cache size: %ld, ts size: %ld",
-                         ts.c_str(), recved_aimsg_ts_.top().sec, recved_aimsg_ts_.top().nanosec, recved_aimsg_cache_.size(), recved_aimsg_ts_.size());
-
-            // clean expired timestamp cache
+            // 清理过期时间戳
             while (!recved_aimsg_ts_.empty() && recved_aimsg_ts_.size() > recved_aimsg_cache_.size())
             {
-                if ((recved_aimsg_ts_.top() == msg_ts) || (recved_aimsg_ts_.top().sec < msg_ts.sec) || (recved_aimsg_ts_.top().sec == msg_ts.sec && recved_aimsg_ts_.top().nanosec < msg_ts.nanosec))
+                auto &top = recved_aimsg_ts_.top();
+                if ((top == msg_ts) || (top.sec < msg_ts.sec) ||
+                    (top.sec == msg_ts.sec && top.nanosec < msg_ts.nanosec))
                 {
-                    std::string top_ts = std::to_string(recved_aimsg_ts_.top().sec) + "." + std::to_string(recved_aimsg_ts_.top().nanosec);
+                    auto top_ts = std::to_string(top.sec) + "." + std::to_string(top.nanosec);
                     recved_aimsg_cache_.erase(top_ts);
                     recved_aimsg_ts_.pop();
-
-                    RCLCPP_DEBUG(logger_, "Erase top ts: %s, cache len: %ld ts len: %ld", top_ts.data(), recved_aimsg_cache_.size(), recved_aimsg_ts_.size());
                 }
-                else
-                {
-                    break;
-                }
+                else break;
             }
         }
-
-        return feed_predict;
+        return result;
     }
 
 private:
-    // Cache the timestamp of AI results
-    std::priority_queue<std_msgs::msg::Header::_stamp_type, std::vector<std_msgs::msg::Header::_stamp_type>, compare_msg> recved_aimsg_ts_;
-
-    // key is timestamp, value is ai msg
+    std::priority_queue<std_msgs::msg::Header::_stamp_type,
+        std::vector<std_msgs::msg::Header::_stamp_type>, compare_msg> recved_aimsg_ts_;
     std::unordered_map<std::string, ai_msgs::msg::PerceptionTargets::UniquePtr> recved_aimsg_cache_;
-
-    // cache lock & cv
     std::mutex cache_mtx_;
     std::condition_variable cache_cv_;
-
-    // log print
     rclcpp::Logger logger_;
-
-    // cache length limit
-    size_t cache_limt_len_ = 20;
+    size_t cache_limit_;
 };
 
-/**
- * @brief Used to manage AI msg subscriptions
- * When subscribing to AI msg, call the `Feed` to cache each AI msg frame according to the timestamp.
- * When subscribing to image, call the `GetTargetRois` to obtain the rois in the corresponding timestamp, and return valid information for each roi.
- */
+// AI消息管理器
 class AiMsgManage
 {
 public:
-    AiMsgManage(const rclcpp::Logger &logger);
-    ~AiMsgManage() = default;
+    AiMsgManage(const rclcpp::Logger &logger) : logger_(logger), cache_(logger) {}
 
-    void Feed(const ai_msgs::msg::PerceptionTargets::ConstSharedPtr msg);
-    int GetTargetRois(const std_msgs::msg::Header::_stamp_type &msg_ts, std::shared_ptr<std::vector<hbDNNRoi>> &rois, std::map<size_t, size_t> &valid_roi_idx,
-                      ai_msgs::msg::PerceptionTargets::UniquePtr &ai_msg,
-                    std::function<int(const hbDNNRoi*, hbDNNRoi*)> norm_func,
-                    int time_out_ms = 200);
+    void Feed(const ai_msgs::msg::PerceptionTargets::ConstSharedPtr msg)
+    {
+        if (msg) cache_.Feed(msg);
+    }
+
+    int GetTargetRois(
+        const std_msgs::msg::Header::_stamp_type &msg_ts,
+        std::shared_ptr<std::vector<hbDNNRoi>> &rois,
+        std::map<size_t, size_t> &valid_roi_idx,
+        ai_msgs::msg::PerceptionTargets::UniquePtr &ai_msg,
+        std::function<int(const hbDNNRoi*, hbDNNRoi*)> norm_func,
+        int timeout_ms = 200)
+    {
+        ai_msg = cache_.Get(msg_ts, timeout_ms);
+        if (!ai_msg) return -1;
+        if (ai_msg->targets.empty()) return 0;
+
+        size_t face_roi_idx = 0;
+        for (const auto &target : ai_msg->targets)
+        {
+            for (const auto &roi : target.rois)
+            {
+                if (roi.type != "face") continue;
+
+                hbDNNRoi raw_roi{
+                    static_cast<int32_t>(roi.rect.x_offset),
+                    static_cast<int32_t>(roi.rect.y_offset),
+                    static_cast<int32_t>(roi.rect.x_offset + roi.rect.width),
+                    static_cast<int32_t>(roi.rect.y_offset + roi.rect.height)
+                };
+                hbDNNRoi normed_roi;
+
+                if (norm_func(&raw_roi, &normed_roi) == 0)
+                {
+                    if (!rois) rois = std::make_shared<std::vector<hbDNNRoi>>();
+                    rois->push_back(normed_roi);
+                    valid_roi_idx[face_roi_idx] = rois->size() - 1;
+                }
+                face_roi_idx++;
+            }
+        }
+        return 0;
+    }
 
 private:
-    // log print
     rclcpp::Logger logger_;
-
-    // cache ai msg for face landmarks detection
-    FaceLandmarksDetFeedCache face_landmarks_det_feed_cache_;
+    FaceLandmarksDetFeedCache cache_;
 };
 
 #endif

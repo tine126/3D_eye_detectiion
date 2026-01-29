@@ -1,0 +1,38 @@
+# 人脸检测+关键点检测 统一参数配置
+# 一处配置，两处生效
+
+# ========== 共享参数 (两节点必须一致) ==========
+shared:
+  # 图像输入话题 (SharedMem)
+  sharedmem_img_topic_name: "/hbmem_img"
+
+  # 推理模式: 0=异步(默认), 1=同步
+  is_sync_mode: 0
+
+  # 人脸检测置信度阈值
+  score_threshold: 0.5
+
+# ========== 节点间链路参数 ==========
+pipeline:
+  # body节点发布 = face节点订阅
+  face_det_topic: "/hobot_mono2d_body_detection"
+
+  # face关键点输出话题
+  landmarks_topic: "/face_landmarks_detection"
+
+# ========== mono2d_body_detection 专用参数 ==========
+body_detection:
+  model_file_name: "config/multitask_body_head_face_hand_kps_960x544.hbm"
+
+# ========== face_landmarks_detection 专用参数 ==========
+landmarks_detection:
+  model_file_name: "config/faceLandmark106pts.hbm"
+
+  # ROI处理参数
+  expand_scale: 1.25
+  roi_size_min: 16
+  roi_size_max: 255
+
+  # 缓存与匹配参数
+  cache_len_limit: 8
+  ai_msg_timeout_ms: 200

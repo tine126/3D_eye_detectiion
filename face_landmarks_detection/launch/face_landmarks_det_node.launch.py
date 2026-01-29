@@ -1,16 +1,5 @@
 # Copyright (c) 2024，D-Robotics.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# 精简版：仅保留在线模式，SharedMem+NV12输入
 
 import os
 from launch import LaunchDescription
@@ -20,23 +9,6 @@ from launch.actions import DeclareLaunchArgument
 from launch_ros.actions import Node
 
 
-def declare_configurable_parameters(parameters):
-    return [
-        DeclareLaunchArgument(
-            param["name"],
-            default_value=param["default_value"],
-            description=param["description"],
-        )
-        for param in parameters
-    ]
-
-
-def set_configurable_parameters(parameters):
-    return dict(
-        [(param["name"], LaunchConfiguration(param["name"])) for param in parameters]
-    )
-
-
 def generate_launch_description():
     model_file_name = os.path.join(
         get_package_share_directory("face_landmarks_detection"),
@@ -44,80 +16,37 @@ def generate_launch_description():
         "faceLandmark106pts.hbm",
     )
 
-    feed_image_path = os.path.join(
-        get_package_share_directory("face_landmarks_detection"),
-        "config",
-        "image.png",
-    )
-
-    node_params = [
-        {
-            "name": "feed_type",
-            "default_value": "0",
-            "description": "feed_type",
-        },
-        {
-            "name": "feed_image_path",
-            "default_value": feed_image_path,
-            "description": "feed_image_path",
-        },
-        {
-            "name": "roi_xyxy",
-            "default_value": "40,100,488,548",
-            "description": "roi_xyxy",
-        },
-        {
-            "name": "is_sync_mode",
-            "default_value": "0",
-            "description": "is_sync_mode",
-        },
-        {
-            "name": "model_file_name",
-            "default_value": model_file_name,
-            "description": "model_file_name",
-        },
-        {
-            "name": "is_shared_mem_sub",
-            "default_value": "1",
-            "description": "is_shared_mem_sub",
-        },
-        {
-            "name": "dump_render_img",
-            "default_value": "0",
-            "description": "dump_render_img",
-        },
-        {
-            "name": "ai_msg_pub_topic_name",
-            "default_value": "/face_landmarks_detection",
-            "description": "ai_msg_pub_topic_name",
-        },
-        {
-            "name": "max_slide_window_size",
-            "default_value": "30",
-            "description": "max_slide_window_size",
-        },
-        {
-            "name": "ros_img_topic_name",
-            "default_value": "/image_raw",
-            "description": "ros_img_topic_name",
-        },
-        {
-            "name": "sharedmem_img_topic_name",
-            "default_value": "/hbmem_img",
-            "description": "sharedmem_img_topic_name",
-        },
-        {"name": "log_level", "default_value": "info", "description": "log_level"},
+    # 参数定义
+    params = [
+        {"name": "is_sync_mode", "default": "0", "desc": "0=async, 1=sync"},
+        {"name": "model_file_name", "default": model_file_name, "desc": "model path"},
+        {"name": "score_threshold", "default": "0.5", "desc": "upstream face det threshold"},
+        {"name": "expand_scale", "default": "1.25", "desc": "ROI expand scale"},
+        {"name": "roi_size_min", "default": "16", "desc": "min ROI size"},
+        {"name": "roi_size_max", "default": "255", "desc": "max ROI size"},
+        {"name": "cache_len_limit", "default": "8", "desc": "image cache limit"},
+        {"name": "ai_msg_timeout_ms", "default": "200", "desc": "AI msg match timeout"},
+        {"name": "sharedmem_img_topic_name", "default": "/hbmem_img", "desc": "image topic"},
+        {"name": "ai_msg_sub_topic_name", "default": "/hobot_mono2d_body_detection", "desc": "AI msg sub topic"},
+        {"name": "ai_msg_pub_topic_name", "default": "/face_landmarks_detection", "desc": "AI msg pub topic"},
+        {"name": "log_level", "default": "warn", "desc": "log level"},
     ]
 
-    launch = declare_configurable_parameters(node_params)
-    launch.append(
-        Node(
-            package="face_landmarks_detection",
-            executable="face_landmarks_detection",
-            output="screen",
-            parameters=[set_configurable_parameters(node_params)],
-            arguments=["--ros-args", "--log-level", LaunchConfiguration("log_level")],
-        )
+    # 声明参数
+    launch_args = [
+        DeclareLaunchArgument(p["name"], default_value=p["default"], description=p["desc"])
+        for p in params
+    ]
+
+    # 节点配置
+    node_params = {p["name"]: LaunchConfiguration(p["name"]) for p in params if p["name"] != "log_level"}
+
+    node = Node(
+        package="face_landmarks_detection",
+        executable="face_landmarks_detection",
+        output="screen",
+        parameters=[node_params],
+        arguments=["--ros-args", "--log-level", LaunchConfiguration("log_level")],
     )
 
-    return LaunchDescription(launch)
+    return LaunchDescription(launch_args + [node])

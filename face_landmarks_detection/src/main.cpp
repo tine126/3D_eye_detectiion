@@ -1,23 +1,15 @@
 // Copyright (c) 2024，D-Robotics.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 精简版：仅保留在线模式，SharedMem+NV12输入
 
-#include "rclcpp/rclcpp.hpp"
+#include <memory>
 #include "face_landmarks_det_node.h"
+#include "rclcpp/rclcpp.hpp"
 
 int main(int argc, char **argv)
 {
     rclcpp::init(argc, argv);
+    RCLCPP_WARN(rclcpp::get_logger("face_landmarks_det"),
+                "Face Landmarks Detection (Lite) - Online mode only, SharedMem+NV12");
     rclcpp::spin(std::make_shared<FaceLandmarksDetNode>());
     rclcpp::shutdown();
     return 0;
