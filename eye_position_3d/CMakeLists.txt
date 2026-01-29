@@ -41,18 +41,18 @@ rosidl_generate_interfaces(${PROJECT_NAME}
 include_directories(${SYS_ROOT}/usr/include)
 
 # 编译目标
-add_executable(eye_position_3d
+add_executable(eye_position_3d_node
   src/main.cpp
   src/eye_position_3d_node.cpp
 )
 
-target_compile_features(eye_position_3d PUBLIC c_std_99 cxx_std_17)
-target_include_directories(eye_position_3d PUBLIC
+target_compile_features(eye_position_3d_node PUBLIC c_std_99 cxx_std_17)
+target_include_directories(eye_position_3d_node PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
 )
 
-ament_target_dependencies(eye_position_3d
+ament_target_dependencies(eye_position_3d_node
   rclcpp
   std_msgs
   geometry_msgs
@@ -63,10 +63,10 @@ ament_target_dependencies(eye_position_3d
 
 # 链接自定义消息类型
 rosidl_get_typesupport_target(cpp_typesupport_target ${PROJECT_NAME} rosidl_typesupport_cpp)
-target_link_libraries(eye_position_3d "${cpp_typesupport_target}")
+target_link_libraries(eye_position_3d_node "${cpp_typesupport_target}")
 
 # 安装
-install(TARGETS eye_position_3d DESTINATION lib/${PROJECT_NAME})
+install(TARGETS eye_position_3d_node DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY launch DESTINATION share/${PROJECT_NAME})
 
 ament_package()

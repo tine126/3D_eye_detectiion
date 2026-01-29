@@ -34,7 +34,7 @@ def generate_launch_description():
 
     node = Node(
         package="eye_position_publisher",
-        executable="eye_position_publisher",
+        executable="eye_position_publisher_node",
         output="screen",
         parameters=[node_params],
         arguments=["--ros-args", "--log-level", LaunchConfiguration("log_level")],
