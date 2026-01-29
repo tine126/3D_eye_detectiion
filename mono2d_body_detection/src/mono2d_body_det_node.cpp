@@ -124,7 +124,7 @@ Mono2dBodyDetNode::Mono2dBodyDetNode(const NodeOptions& options)
   this->get_parameter<std::string>("left_pub_topic", left_pub_topic_);
   this->get_parameter<std::string>("right_img_topic", right_img_topic_);
   this->get_parameter<std::string>("right_pub_topic", right_pub_topic_);
-  this->get_parameter<double>("score_threshold", score_threshold_);
+  this->get_parameter<float>("score_threshold", score_threshold_);
 
   // 打印关键配置
   RCLCPP_WARN(rclcpp::get_logger("mono2d_body_det"),
@@ -348,8 +348,9 @@ int Mono2dBodyDetNode::PostProcess(const std::shared_ptr<DnnNodeOutput>& output)
 
     // 解析模型输出 (只解析face)
     std::vector<std::shared_ptr<hobot::dnn_node::parser_fasterrcnn::Filter2DResult>> results;
+    std::shared_ptr<hobot::dnn_node::parser_fasterrcnn::LandmarksResult> landmarks_result;
     int ret = hobot::dnn_node::parser_fasterrcnn::Parse(
-        node_output, parser_para_, box_outputs_index_, -1, -1, results, nullptr);
+        node_output, parser_para_, box_outputs_index_, -1, -1, results, landmarks_result);
 
     if (ret < 0) {
       RCLCPP_ERROR(rclcpp::get_logger("mono2d_body_det"), "Parse failed!");

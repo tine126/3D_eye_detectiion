@@ -48,14 +48,14 @@ FaceLandmarksDetNode::FaceLandmarksDetNode(const std::string &node_name, const N
     this->get_parameter<std::string>("right_img_topic", right_img_topic_);
     this->get_parameter<std::string>("right_ai_sub_topic", right_ai_sub_topic_);
     this->get_parameter<std::string>("right_ai_pub_topic", right_ai_pub_topic_);
-    this->get_parameter<double>("expand_scale", expand_scale_);
+    this->get_parameter<float>("expand_scale", expand_scale_);
     this->get_parameter<int>("roi_size_min", roi_size_min_);
     this->get_parameter<int>("roi_size_max", roi_size_max_);
     int cache_len = static_cast<int>(cache_len_limit_);
     this->get_parameter<int>("cache_len_limit", cache_len);
     cache_len_limit_ = static_cast<size_t>(cache_len);
     this->get_parameter<int>("ai_msg_timeout_ms", ai_msg_timeout_ms_);
-    this->get_parameter<double>("score_threshold", score_threshold_);
+    this->get_parameter<float>("score_threshold", score_threshold_);
 
     // 打印配置信息
     RCLCPP_WARN(this->get_logger(),
