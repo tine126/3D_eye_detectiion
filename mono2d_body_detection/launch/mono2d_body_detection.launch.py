@@ -1,16 +1,5 @@
 # Copyright (c) 2024，D-Robotics.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# 精简版：只保留人脸检测功能，仅支持SharedMem+NV12输入
 
 import os
 
@@ -26,15 +15,20 @@ from launch.substitutions import LaunchConfiguration
 
 
 def generate_launch_description():
+    # 模型文件参数
     model_file_name_launch_arg = DeclareLaunchArgument(
-        "kps_model_file_name", default_value=TextSubstitution(text="config/multitask_body_head_face_hand_kps_960x544.hbm")
+        "model_file_name",
+        default_value=TextSubstitution(text="config/multitask_body_head_face_hand_kps_960x544.hbm")
     )
-    model_type_launch_arg = DeclareLaunchArgument(
-        "kps_model_type", default_value=TextSubstitution(text="0")
+    # 同步/异步推理模式: 0=异步(默认), 1=同步
+    is_sync_mode_launch_arg = DeclareLaunchArgument(
+        "is_sync_mode", default_value=TextSubstitution(text="0")
     )
-    track_mode_launch_arg = DeclareLaunchArgument(
-        "kps_track_mode", default_value=TextSubstitution(text="1")
+    # 人脸检测置信度阈值
+    score_threshold_launch_arg = DeclareLaunchArgument(
+        "score_threshold", default_value=TextSubstitution(text="0.5")
     )
+
     camera_type = os.getenv('CAM_TYPE')
     print("camera_type is ", camera_type)
 
@@ -43,8 +37,8 @@ def generate_launch_description():
     camera_device_arg = None
 
     if camera_type == "fb":
-        print("using feedback")
-        # local image publish
+        print("using feedback - converting to SharedMem")
+        # local image publish (需要转换为SharedMem)
         fb_node = IncludeLaunchDescription(
             PythonLaunchDescriptionSource(
                 os.path.join(
@@ -59,8 +53,8 @@ def generate_launch_description():
         camera_node = fb_node
         camera_type_mipi = False
     elif camera_type == "usb":
-        print("using usb camera")
-        # using usb cam publish image
+        print("using usb camera - converting to SharedMem")
+        # using usb cam publish image (需要转换为SharedMem)
         usb_node = IncludeLaunchDescription(
             PythonLaunchDescriptionSource(
                 os.path.join(
@@ -71,12 +65,11 @@ def generate_launch_description():
                 'usb_image_height': '480'
             }.items()
         )
-
         camera_node = usb_node
         camera_type_mipi = False
     else:
-        print("using mipi cam")
-        # using mipi cam publish image
+        print("using mipi cam (SharedMem native)")
+        # using mipi cam publish image (原生SharedMem支持)
         mipi_cam_device_arg = DeclareLaunchArgument(
             'device',
             default_value='F37',
@@ -100,7 +93,7 @@ def generate_launch_description():
         camera_type_mipi = True
         camera_device_arg = mipi_cam_device_arg
 
-    # nv12->jpeg
+    # nv12->jpeg (用于web显示)
     jpeg_codec_node = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(
@@ -114,7 +107,7 @@ def generate_launch_description():
         }.items()
     )
 
-    # jpeg->nv12
+    # jpeg->nv12 (非MIPI相机需要转换)
     nv12_codec_node = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(
@@ -128,7 +121,7 @@ def generate_launch_description():
         }.items()
     )
 
-    # web
+    # web显示
     web_smart_topic_arg = DeclareLaunchArgument(
         'smart_topic',
         default_value='/hobot_mono2d_body_detection',
@@ -144,45 +137,45 @@ def generate_launch_description():
         }.items()
     )
 
-    # mono2d body detection
+    # 人脸检测节点 (精简版)
     mono2d_body_pub_topic_arg = DeclareLaunchArgument(
         'mono2d_body_pub_topic',
         default_value='/hobot_mono2d_body_detection',
-        description='mono2d body ai message publish topic')
+        description='face detection ai message publish topic')
     mono2d_body_det_node = Node(
         package='mono2d_body_detection',
         executable='mono2d_body_detection',
         output='screen',
         parameters=[
-            {"model_file_name": LaunchConfiguration('kps_model_file_name')},
-            {"model_type": LaunchConfiguration('kps_model_type')},
-            {"track_mode": LaunchConfiguration('kps_track_mode')},
-            {"ai_msg_pub_topic_name": LaunchConfiguration(
-                'mono2d_body_pub_topic')}
+            {"model_file_name": LaunchConfiguration('model_file_name')},
+            {"is_sync_mode": LaunchConfiguration('is_sync_mode')},
+            {"score_threshold": LaunchConfiguration('score_threshold')},
+            {"ai_msg_pub_topic_name": LaunchConfiguration('mono2d_body_pub_topic')}
         ],
         arguments=['--ros-args', '--log-level', 'warn']
     )
 
+    # 零拷贝环境配置
     shared_mem_node = IncludeLaunchDescription(
-                PythonLaunchDescriptionSource(
-                    os.path.join(
-                        get_package_share_directory('hobot_shm'),
-                        'launch/hobot_shm.launch.py'))
-            )
+        PythonLaunchDescriptionSource(
+            os.path.join(
+                get_package_share_directory('hobot_shm'),
+                'launch/hobot_shm.launch.py'))
+    )
 
     if camera_type_mipi:
         return LaunchDescription([
             model_file_name_launch_arg,
-            model_type_launch_arg,
-            track_mode_launch_arg,
+            is_sync_mode_launch_arg,
+            score_threshold_launch_arg,
             camera_device_arg,
             # 启动零拷贝环境配置node
             shared_mem_node,
             # image publish
             camera_node,
-            # image codec
+            # image codec (for web display)
             jpeg_codec_node,
-            # body detection
+            # face detection
             mono2d_body_pub_topic_arg,
             mono2d_body_det_node,
             # web display
@@ -192,15 +185,15 @@ def generate_launch_description():
     else:
         return LaunchDescription([
             model_file_name_launch_arg,
-            model_type_launch_arg,
-            track_mode_launch_arg,
+            is_sync_mode_launch_arg,
+            score_threshold_launch_arg,
             # 启动零拷贝环境配置node
             shared_mem_node,
             # image publish
             camera_node,
-            # image codec
+            # image codec (convert to SharedMem NV12)
             nv12_codec_node,
-            # body detection
+            # face detection
             mono2d_body_pub_topic_arg,
             mono2d_body_det_node,
             # web display

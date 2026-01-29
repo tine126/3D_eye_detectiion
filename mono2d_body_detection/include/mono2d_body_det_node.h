@@ -12,79 +12,57 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// 精简版：只保留人脸检测功能，仅支持SharedMem+NV12输入
+
+#ifndef MONO2D_BODY_DET_NODE_H_
+#define MONO2D_BODY_DET_NODE_H_
+
 #include <atomic>
 #include <map>
 #include <memory>
 #include <set>
 #include <string>
-#include <unordered_map>
 #include <vector>
+#include <mutex>
+#include <condition_variable>
 
-#ifdef CV_BRIDGE_CPP
-#include <cv_bridge/cv_bridge.hpp>
-#else
-#include <cv_bridge/cv_bridge.h>
-#endif
 #include "rclcpp/rclcpp.hpp"
-#include "sensor_msgs/msg/image.hpp"
-
-#ifdef SHARED_MEM_ENABLED
 #include "hbm_img_msgs/msg/hbm_msg1080_p.hpp"
-#endif
-
-#ifndef PLATFORM_X86
-#include "hobot_mot/hobot_mot.h"
-#endif
-
-#include "ai_msgs/msg/capture_targets.hpp"
 #include "ai_msgs/msg/perception_targets.hpp"
 #include "dnn_node/dnn_node.h"
 #include "dnn_node/util/output_parser/detection/fasterrcnn_output_parser.h"
 
-#include "post_process/yolo_pose_parser.h"
-
-#ifndef MONO2D_BODY_DET_NODE_H_
-#define MONO2D_BODY_DET_NODE_H_
-
 using rclcpp::NodeOptions;
-
 using hobot::dnn_node::DNNInput;
 using hobot::dnn_node::DnnNode;
 using hobot::dnn_node::DnnNodeOutput;
 using hobot::dnn_node::ModelTaskType;
 using hobot::dnn_node::NV12PyramidInput;
-
 using hobot::dnn_node::parser_fasterrcnn::FasterRcnnKpsParserPara;
-using hobot::dnn_node::parser_fasterrcnn::LandmarksResult;
 
-// 使用output manage解决异步多线程情况下模型输出乱序的问题
+// 输出排序管理器：解决异步推理输出乱序问题
 class NodeOutputManage {
  public:
   void Feed(uint64_t ts_ms);
   std::vector<std::shared_ptr<DnnNodeOutput>> Feed(
       const std::shared_ptr<DnnNodeOutput>& node_output);
-  void Erase(uint64_t ts_ms);
 
  private:
   std::set<uint64_t> cache_frame_;
   std::map<uint64_t, std::shared_ptr<DnnNodeOutput>> cache_node_output_;
-  // 如果图像采集频率是30fps，能够缓存10帧，对应要求端到端的推理耗时最长不能超过1000/30*10=750ms
-  const uint8_t cache_size_limit_ = 10;
+  const uint8_t cache_size_limit_ = 10;  // 最大缓存10帧
   std::mutex mtx_;
-  std::condition_variable cv_;
   const uint64_t smart_output_timeout_ms_ = 1000;
 };
 
+// 推理输出结构
 struct FasterRcnnOutput : public DnnNodeOutput {
   std::shared_ptr<std_msgs::msg::Header> image_msg_header = nullptr;
-
-  // 算法推理使用的图像数据，用于本地渲染使用
-  std::shared_ptr<hobot::dnn_node::NV12PyramidInput> pyramid = nullptr;
-
   struct timespec preprocess_timespec_start;
   struct timespec preprocess_timespec_end;
 };
 
+// 精简版人脸检测节点
 class Mono2dBodyDetNode : public DnnNode {
  public:
   Mono2dBodyDetNode(const NodeOptions& options = NodeOptions());
@@ -95,96 +73,49 @@ class Mono2dBodyDetNode : public DnnNode {
   int PostProcess(const std::shared_ptr<DnnNodeOutput>& outputs) override;
 
  private:
-  // 是否在本地渲染并保存渲染后的图片
-  int dump_render_img_ = 0;
-
-  int model_type_ = 1;
-
-  int track_mode_ = 1;
-
-  std::string model_file_name_ =
-      "config/multitask_body_head_face_hand_kps_960x544.hbm";
+  // ========== 模型配置 ==========
+  // 模型文件路径 (FasterRCNN多任务模型)
+  std::string model_file_name_ = "config/multitask_body_head_face_hand_kps_960x544.hbm";
   std::string model_name_ = "";
   ModelTaskType model_task_type_ = ModelTaskType::ModelInferType;
 
+  // 模型输入尺寸
+  int model_input_width_ = -1;
+  int model_input_height_ = -1;
 
+  // 缩放比例 (原图尺寸 / 模型输入尺寸)
   std::atomic<double> width_scale_{1.0};
   std::atomic<double> height_scale_{1.0};
 
-  int model_input_width_ = -1;
-  int model_input_height_ = -1;
-  const int32_t model_output_count_ = 9;
-  const int32_t body_box_output_index_ = 1;
-  const int32_t head_box_output_index_ = 3;
-  const int32_t face_box_output_index_ = 5;
-  const int32_t hand_box_output_index_ = 7;
-  std::vector<int32_t> box_outputs_index_ = {body_box_output_index_,
-                                                   head_box_output_index_,
-                                                   face_box_output_index_,
-                                                   hand_box_output_index_};
-  const int32_t kps_output_index_ = 8;
-  std::unordered_map<int32_t, std::string> box_outputs_index_type_ = {
-      {body_box_output_index_, "body"},
-      {head_box_output_index_, "head"},
-      {face_box_output_index_, "face"},
-      {hand_box_output_index_, "hand"}};
+  // ========== 输出配置 (只保留face) ==========
+  const int32_t face_box_output_index_ = 5;  // face输出索引固定为5
+  std::vector<int32_t> box_outputs_index_ = {face_box_output_index_};
 
-  std::shared_ptr<FasterRcnnKpsParserPara> parser_para_ = nullptr;
+  // face检测置信度阈值 (可通过参数配置)
+  float score_threshold_ = 0.5;
 
-  // key is mot processing type, body/face/head/hand
-  // val is config file path
-#ifndef PLATFORM_X86
-  std::unordered_map<std::string, std::string> hobot_mot_configs_{
-      {"body", "config/iou2_method_param.json"},
-      {"face", "config/iou2_method_param.json"},
-      {"head", "config/iou2_method_param.json"},
-      {"hand", "config/iou2_euclid_method_param.json"}};
-
-  // key is mot processing type, body/face/head/hand
-  // val is mot instance
-  std::unordered_map<std::string, std::shared_ptr<HobotMot>> hobot_mots_;
-#endif
-  
-  int image_gap_ = 1;
- 
+  // ========== 推理配置 ==========
+  // 同步/异步推理模式: 0=异步(默认), 1=同步
   int is_sync_mode_ = 0;
 
-  // 使用shared mem通信方式订阅图片
-  int is_shared_mem_sub_ = 1;
-
-  std::string ai_msg_pub_topic_name_ = "hobot_mono2d_body_detection";
-  rclcpp::Publisher<ai_msgs::msg::PerceptionTargets>::SharedPtr msg_publisher_ =
-      nullptr;
-
-  int Predict(std::vector<std::shared_ptr<DNNInput>>& inputs,
-              const std::shared_ptr<std::vector<hbDNNRoi>> rois,
-              std::shared_ptr<DnnNodeOutput> dnn_output);
-
-#ifdef SHARED_MEM_ENABLED
+  // ========== 订阅配置 (只支持SharedMem) ==========
+  std::string sharedmem_img_topic_name_ = "/hbmem_img";
   rclcpp::Subscription<hbm_img_msgs::msg::HbmMsg1080P>::ConstSharedPtr
       sharedmem_img_subscription_ = nullptr;
-  std::string sharedmem_img_topic_name_ = "/hbmem_img";
-  void SharedMemImgProcess(
-      const hbm_img_msgs::msg::HbmMsg1080P::ConstSharedPtr msg);
-#endif
 
-  rclcpp::Subscription<sensor_msgs::msg::Image>::ConstSharedPtr
-      ros_img_subscription_ = nullptr;
-  // 目前只支持订阅原图，可以使用压缩图"/image_raw/compressed" topic
-  // 和sensor_msgs::msg::CompressedImage格式扩展订阅压缩图
-  std::string ros_img_topic_name_ = "/image_raw";
-  void RosImgProcess(const sensor_msgs::msg::Image::ConstSharedPtr msg);
+  // ========== 发布配置 ==========
+  std::string ai_msg_pub_topic_name_ = "hobot_mono2d_body_detection";
+  rclcpp::Publisher<ai_msgs::msg::PerceptionTargets>::SharedPtr msg_publisher_ = nullptr;
 
-  std::shared_ptr<NodeOutputManage> node_output_manage_ptr_ =
-      std::make_shared<NodeOutputManage>();
-#ifndef PLATFORM_X86
-  int DoMot(
-      const time_t& time_stamp,
-      const std::unordered_map<int32_t, std::vector<MotBox>>& in_rois,
-      std::unordered_map<int32_t, std::vector<MotBox>>& out_rois,
-      std::unordered_map<int32_t, std::vector<std::shared_ptr<MotTrackId>>>&
-          out_disappeared_ids);
-#endif
+  // ========== 内部组件 ==========
+  std::shared_ptr<FasterRcnnKpsParserPara> parser_para_ = nullptr;
+  std::shared_ptr<NodeOutputManage> node_output_manage_ptr_ = std::make_shared<NodeOutputManage>();
+
+  // ========== 私有方法 ==========
+  int Predict(std::vector<std::shared_ptr<DNNInput>>& inputs,
+              std::shared_ptr<DnnNodeOutput> dnn_output);
+
+  void SharedMemImgProcess(const hbm_img_msgs::msg::HbmMsg1080P::ConstSharedPtr msg);
 };
 
 #endif  // MONO2D_BODY_DET_NODE_H_
