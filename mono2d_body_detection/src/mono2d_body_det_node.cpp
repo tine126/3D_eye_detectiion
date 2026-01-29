@@ -541,7 +541,7 @@ int Mono2dBodyDetNode::PostProcess(
       // 排序后的输出为空
       auto fasterRcnn_output =
           std::dynamic_pointer_cast<FasterRcnnOutput>(output);
-      if (!fasterRcnn_output && !fasterRcnn_output->image_msg_header) {
+      if (!fasterRcnn_output || !fasterRcnn_output->image_msg_header) {
         // 由于没有消息头（时间戳）导致的排序后的输出为空
         // 直接使用当前帧输出
         node_outputs.push_back(output);
