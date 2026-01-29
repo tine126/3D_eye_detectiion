@@ -40,5 +40,5 @@
 # debug information files
 *.dwo
 
-
+doc/
 output/
