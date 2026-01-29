@@ -25,7 +25,7 @@ FaceLandmarksDetNode::FaceLandmarksDetNode(const std::string &node_name, const N
 {
     // 声明并获取参数
     this->declare_parameter<int>("is_sync_mode", is_sync_mode_);
-    this->declare_parameter<std::string>("model_file_name", model_file_name_);
+    this->declare_parameter<std::string>("landmarks_model_file_name", landmarks_model_file_name_);
     // 双路topic参数
     this->declare_parameter<std::string>("left_img_topic", left_img_topic_);
     this->declare_parameter<std::string>("left_ai_sub_topic", left_ai_sub_topic_);
@@ -41,7 +41,7 @@ FaceLandmarksDetNode::FaceLandmarksDetNode(const std::string &node_name, const N
     this->declare_parameter<double>("score_threshold", score_threshold_);
 
     this->get_parameter<int>("is_sync_mode", is_sync_mode_);
-    this->get_parameter<std::string>("model_file_name", model_file_name_);
+    this->get_parameter<std::string>("landmarks_model_file_name", landmarks_model_file_name_);
     this->get_parameter<std::string>("left_img_topic", left_img_topic_);
     this->get_parameter<std::string>("left_ai_sub_topic", left_ai_sub_topic_);
     this->get_parameter<std::string>("left_ai_pub_topic", left_ai_pub_topic_);
@@ -60,7 +60,7 @@ FaceLandmarksDetNode::FaceLandmarksDetNode(const std::string &node_name, const N
     // 打印配置信息
     RCLCPP_WARN(this->get_logger(),
         "\n========== 人脸关键点检测 (双路) ==========\n"
-        " model_file_name: %s\n"
+        " landmarks_model_file_name: %s\n"
         " is_sync_mode: %d (%s)\n"
         " score_threshold: %.2f\n"
         " expand_scale: %.2f\n"
@@ -69,7 +69,7 @@ FaceLandmarksDetNode::FaceLandmarksDetNode(const std::string &node_name, const N
         " 左IR: %s -> %s -> %s\n"
         " 右IR: %s -> %s -> %s\n"
         "============================================",
-        model_file_name_.c_str(),
+        landmarks_model_file_name_.c_str(),
         is_sync_mode_, is_sync_mode_ == 0 ? "异步" : "同步",
         score_threshold_,
         expand_scale_,
@@ -149,7 +149,7 @@ FaceLandmarksDetNode::~FaceLandmarksDetNode()
 int FaceLandmarksDetNode::SetNodePara()
 {
     if (!dnn_node_para_ptr_) return -1;
-    dnn_node_para_ptr_->model_file = model_file_name_;
+    dnn_node_para_ptr_->model_file = landmarks_model_file_name_;
     dnn_node_para_ptr_->model_name = model_name_;
     dnn_node_para_ptr_->model_task_type = model_task_type_;
     dnn_node_para_ptr_->task_num = 4;
