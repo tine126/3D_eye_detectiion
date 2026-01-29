@@ -682,27 +682,8 @@ int Mono2dBodyDetNode::PostProcess(
       }
       for (size_t idx = 0; idx < out_roi.second.size(); idx++) {
         const auto& rect = out_roi.second.at(idx);
-        // Check if ROI has invalid tracking state
-        bool is_invalid = false;
-#ifndef PLATFORM_X86
-        is_invalid = (rect.id < 0 || hobot_mot::DataState::INVALID == rect.state_);
-#else
-        is_invalid = (rect.id < 0 || DataState::INVALID == rect.state_);
-#endif
-        if (is_invalid) {
-          std::stringstream ss;
-          ss << "invalid id, rect: " << rect.x1 << " " << rect.y1 << " "
-             << rect.x2 << " " << rect.y2 << ", score: " << rect.score
-             << ", state_: " << static_cast<int>(rect.state_);
-          RCLCPP_INFO(
-              rclcpp::get_logger("mono2d_body_det"), "%s", ss.str().c_str());
-          // For face ROI, still publish even if tracking is invalid
-          // This ensures face_landmarks_detection can receive face ROI
-          if (roi_type != "face") {
-            continue;
-          }
-        }
         // Only publish face ROI, skip body/head/hand
+        // Face ROI is published directly without any filtering
         if (roi_type != "face") {
           continue;
         }
@@ -1191,6 +1172,7 @@ int Mono2dBodyDetNode::DoMot(
       for (const auto& box : roi.second) {
         MotBox out_box = box;
         out_box.id = 0;  // Assign a default track ID
+        out_box.state_ = hobot_mot::DataState::VALID;  // Set valid state
         face_boxes.push_back(out_box);
       }
       out_rois[roi.first] = face_boxes;
