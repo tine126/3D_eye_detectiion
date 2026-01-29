@@ -10,14 +10,30 @@ LOG_FILE="${LOG_DIR}/eye_tracking_${TIMESTAMP}.log"
 # ========== 创建日志目录 ==========
 mkdir -p "$LOG_DIR"
 
+# ========== 清理残留进程 ==========
+echo "清理残留进程..."
+pkill -f mono2d_body_detection 2>/dev/null || true
+pkill -f face_landmarks_detection 2>/dev/null || true
+pkill -f img_format_converter 2>/dev/null || true
+pkill -f eye_position 2>/dev/null || true
+pkill -f orbbec_camera 2>/dev/null || true
+sleep 1
+
+# ========== 清理 FastDDS 共享内存残留 ==========
+echo "清理 FastDDS 共享内存..."
+rm -f /dev/shm/*fastdds* 2>/dev/null || true
+rm -f /dev/shm/*fastrtps* 2>/dev/null || true
+
 # ========== 环境设置 ==========
 source /opt/tros/humble/setup.bash
 source ~/ros2_ws/install/setup.bash
 
-# 零拷贝通信环境变量 - 使用禁用共享内存的配置
-# 注意: HbmMsg1080P 消息类型与 FastDDS data_sharing 不兼容
+# FastDDS 配置：彻底禁用共享内存传输
+# 注意: HbmMsg1080P 消息类型与 FastDDS SHM/data_sharing 不兼容
 export RMW_FASTRTPS_USE_QOS_FROM_XML=1
+export RMW_FASTRTPS_USE_SHM=0
 export FASTRTPS_DEFAULT_PROFILES_FILE=~/ros2_ws/install/tcl_eye_tracking_bringup/share/tcl_eye_tracking_bringup/config/fastdds_no_shm.xml
+export FASTDDS_DEFAULT_PROFILES_FILE=~/ros2_ws/install/tcl_eye_tracking_bringup/share/tcl_eye_tracking_bringup/config/fastdds_no_shm.xml
 
 # ========== 显示启动信息 ==========
 echo "=============================================="
