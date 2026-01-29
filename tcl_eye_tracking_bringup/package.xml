@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>tcl_eye_tracking_bringup</name>
+  <version>1.0.0</version>
+  <description>TCL人眼定位算法项目统一启动包</description>
+  <maintainer email="dev@example.com">Developer</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>orbbec_camera</exec_depend>
+  <exec_depend>img_format_converter</exec_depend>
+  <exec_depend>mono2d_body_detection</exec_depend>
+  <exec_depend>face_landmarks_detection</exec_depend>
+  <exec_depend>eye_position_publisher</exec_depend>
+  <exec_depend>eye_position_3d</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
