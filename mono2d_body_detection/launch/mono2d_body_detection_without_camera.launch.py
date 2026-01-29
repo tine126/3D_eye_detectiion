@@ -36,14 +36,14 @@ def generate_launch_description():
     left_img_topic_arg = DeclareLaunchArgument(
         "left_img_topic", default_value="/hbmem_img_left"
     )
-    left_pub_topic_arg = DeclareLaunchArgument(
-        "left_pub_topic", default_value="/hobot_mono2d_body_detection_left"
+    mono2d_left_pub_topic_arg = DeclareLaunchArgument(
+        "mono2d_left_pub_topic", default_value="/hobot_mono2d_body_detection_left"
     )
     right_img_topic_arg = DeclareLaunchArgument(
         "right_img_topic", default_value="/hbmem_img_right"
     )
-    right_pub_topic_arg = DeclareLaunchArgument(
-        "right_pub_topic", default_value="/hobot_mono2d_body_detection_right"
+    mono2d_right_pub_topic_arg = DeclareLaunchArgument(
+        "mono2d_right_pub_topic", default_value="/hobot_mono2d_body_detection_right"
     )
     # 日志级别
     log_level_arg = DeclareLaunchArgument(
@@ -60,9 +60,9 @@ def generate_launch_description():
             {"is_sync_mode": LaunchConfiguration('is_sync_mode')},
             {"score_threshold": LaunchConfiguration('score_threshold')},
             {"left_img_topic": LaunchConfiguration('left_img_topic')},
-            {"left_pub_topic": LaunchConfiguration('left_pub_topic')},
+            {"mono2d_left_pub_topic": LaunchConfiguration('mono2d_left_pub_topic')},
             {"right_img_topic": LaunchConfiguration('right_img_topic')},
-            {"right_pub_topic": LaunchConfiguration('right_pub_topic')},
+            {"mono2d_right_pub_topic": LaunchConfiguration('mono2d_right_pub_topic')},
         ],
         arguments=['--ros-args', '--log-level', LaunchConfiguration('log_level')]
     )
@@ -72,9 +72,9 @@ def generate_launch_description():
         is_sync_mode_arg,
         score_threshold_arg,
         left_img_topic_arg,
-        left_pub_topic_arg,
+        mono2d_left_pub_topic_arg,
         right_img_topic_arg,
-        right_pub_topic_arg,
+        mono2d_right_pub_topic_arg,
         log_level_arg,
         mono2d_body_det_node,
     ])
