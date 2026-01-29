@@ -29,11 +29,11 @@ private:
 
     // ========== 话题配置 ==========
     // 左IR
-    std::string left_sub_topic_ = "/face_landmarks_detection_left";
-    std::string left_pub_topic_ = "/eye_positions_left";
+    std::string eye_left_sub_topic_ = "/face_landmarks_detection_left";
+    std::string eye_left_pub_topic_ = "/eye_positions_left";
     // 右IR
-    std::string right_sub_topic_ = "/face_landmarks_detection_right";
-    std::string right_pub_topic_ = "/eye_positions_right";
+    std::string eye_right_sub_topic_ = "/face_landmarks_detection_right";
+    std::string eye_right_pub_topic_ = "/eye_positions_right";
 
     // ========== 订阅/发布 ==========
     // 左IR
