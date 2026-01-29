@@ -26,9 +26,13 @@ FaceLandmarksDetNode::FaceLandmarksDetNode(const std::string &node_name, const N
     // 声明并获取参数
     this->declare_parameter<int>("is_sync_mode", is_sync_mode_);
     this->declare_parameter<std::string>("model_file_name", model_file_name_);
-    this->declare_parameter<std::string>("ai_msg_pub_topic_name", ai_msg_pub_topic_name_);
-    this->declare_parameter<std::string>("ai_msg_sub_topic_name", ai_msg_sub_topic_name_);
-    this->declare_parameter<std::string>("sharedmem_img_topic_name", sharedmem_img_topic_name_);
+    // 双路topic参数
+    this->declare_parameter<std::string>("left_img_topic", left_img_topic_);
+    this->declare_parameter<std::string>("left_ai_sub_topic", left_ai_sub_topic_);
+    this->declare_parameter<std::string>("left_ai_pub_topic", left_ai_pub_topic_);
+    this->declare_parameter<std::string>("right_img_topic", right_img_topic_);
+    this->declare_parameter<std::string>("right_ai_sub_topic", right_ai_sub_topic_);
+    this->declare_parameter<std::string>("right_ai_pub_topic", right_ai_pub_topic_);
     this->declare_parameter<double>("expand_scale", expand_scale_);
     this->declare_parameter<int>("roi_size_min", roi_size_min_);
     this->declare_parameter<int>("roi_size_max", roi_size_max_);
@@ -38,9 +42,12 @@ FaceLandmarksDetNode::FaceLandmarksDetNode(const std::string &node_name, const N
 
     this->get_parameter<int>("is_sync_mode", is_sync_mode_);
     this->get_parameter<std::string>("model_file_name", model_file_name_);
-    this->get_parameter<std::string>("ai_msg_pub_topic_name", ai_msg_pub_topic_name_);
-    this->get_parameter<std::string>("ai_msg_sub_topic_name", ai_msg_sub_topic_name_);
-    this->get_parameter<std::string>("sharedmem_img_topic_name", sharedmem_img_topic_name_);
+    this->get_parameter<std::string>("left_img_topic", left_img_topic_);
+    this->get_parameter<std::string>("left_ai_sub_topic", left_ai_sub_topic_);
+    this->get_parameter<std::string>("left_ai_pub_topic", left_ai_pub_topic_);
+    this->get_parameter<std::string>("right_img_topic", right_img_topic_);
+    this->get_parameter<std::string>("right_ai_sub_topic", right_ai_sub_topic_);
+    this->get_parameter<std::string>("right_ai_pub_topic", right_ai_pub_topic_);
     this->get_parameter<double>("expand_scale", expand_scale_);
     this->get_parameter<int>("roi_size_min", roi_size_min_);
     this->get_parameter<int>("roi_size_max", roi_size_max_);
@@ -52,28 +59,24 @@ FaceLandmarksDetNode::FaceLandmarksDetNode(const std::string &node_name, const N
 
     // 打印配置信息
     RCLCPP_WARN(this->get_logger(),
-        "\n========== Face Landmarks Detection (Lite) ==========\n"
+        "\n========== 人脸关键点检测 (双路) ==========\n"
         " model_file_name: %s\n"
         " is_sync_mode: %d (%s)\n"
-        " score_threshold: %.2f (upstream)\n"
+        " score_threshold: %.2f\n"
         " expand_scale: %.2f\n"
         " roi_size: [%d, %d]\n"
         " cache_len_limit: %zu\n"
-        " ai_msg_timeout_ms: %d\n"
-        " sharedmem_img_topic: %s\n"
-        " ai_msg_sub_topic: %s\n"
-        " ai_msg_pub_topic: %s\n"
-        "=====================================================",
+        " 左IR: %s -> %s -> %s\n"
+        " 右IR: %s -> %s -> %s\n"
+        "============================================",
         model_file_name_.c_str(),
-        is_sync_mode_, is_sync_mode_ == 0 ? "async" : "sync",
+        is_sync_mode_, is_sync_mode_ == 0 ? "异步" : "同步",
         score_threshold_,
         expand_scale_,
         roi_size_min_, roi_size_max_,
         cache_len_limit_,
-        ai_msg_timeout_ms_,
-        sharedmem_img_topic_name_.c_str(),
-        ai_msg_sub_topic_name_.c_str(),
-        ai_msg_pub_topic_name_.c_str());
+        left_img_topic_.c_str(), left_ai_sub_topic_.c_str(), left_ai_pub_topic_.c_str(),
+        right_img_topic_.c_str(), right_ai_sub_topic_.c_str(), right_ai_pub_topic_.c_str());
 
     // 初始化模型
     if (Init() != 0)
@@ -92,32 +95,47 @@ FaceLandmarksDetNode::FaceLandmarksDetNode(const std::string &node_name, const N
     }
     RCLCPP_INFO(this->get_logger(), "Model input: %dx%d", model_input_width_, model_input_height_);
 
-    // 初始化组件
-    ai_msg_manage_ = std::make_shared<AiMsgManage>(this->get_logger());
+    // 初始化双路组件
+    left_ai_manage_ = std::make_shared<AiMsgManage>(this->get_logger());
+    right_ai_manage_ = std::make_shared<AiMsgManage>(this->get_logger());
     predict_task_ = std::make_shared<std::thread>(std::bind(&FaceLandmarksDetNode::RunPredict, this));
 
-    // 创建发布者
-    ai_msg_publisher_ = this->create_publisher<ai_msgs::msg::PerceptionTargets>(
-        ai_msg_pub_topic_name_, 10);
+    // 创建双路发布者
+    left_ai_pub_ = this->create_publisher<ai_msgs::msg::PerceptionTargets>(
+        left_ai_pub_topic_, 10);
+    right_ai_pub_ = this->create_publisher<ai_msgs::msg::PerceptionTargets>(
+        right_ai_pub_topic_, 10);
 
-    // 创建AI消息订阅
-    ai_msg_subscription_ = this->create_subscription<ai_msgs::msg::PerceptionTargets>(
-        ai_msg_sub_topic_name_, 10,
-        std::bind(&FaceLandmarksDetNode::AiMsgProcess, this, std::placeholders::_1));
+    // 创建双路AI消息订阅
+    left_ai_sub_ = this->create_subscription<ai_msgs::msg::PerceptionTargets>(
+        left_ai_sub_topic_, 10,
+        std::bind(&FaceLandmarksDetNode::LeftAiCallback, this, std::placeholders::_1));
+    right_ai_sub_ = this->create_subscription<ai_msgs::msg::PerceptionTargets>(
+        right_ai_sub_topic_, 10,
+        std::bind(&FaceLandmarksDetNode::RightAiCallback, this, std::placeholders::_1));
 
-    // 创建SharedMem图像订阅
-    sharedmem_img_subscription_ = this->create_subscription<hbm_img_msgs::msg::HbmMsg1080P>(
-        sharedmem_img_topic_name_, rclcpp::SensorDataQoS(),
-        std::bind(&FaceLandmarksDetNode::SharedMemImgProcess, this, std::placeholders::_1));
+    // 创建双路SharedMem图像订阅
+    left_img_sub_ = this->create_subscription<hbm_img_msgs::msg::HbmMsg1080P>(
+        left_img_topic_, rclcpp::SensorDataQoS(),
+        std::bind(&FaceLandmarksDetNode::LeftImgCallback, this, std::placeholders::_1));
+    right_img_sub_ = this->create_subscription<hbm_img_msgs::msg::HbmMsg1080P>(
+        right_img_topic_, rclcpp::SensorDataQoS(),
+        std::bind(&FaceLandmarksDetNode::RightImgCallback, this, std::placeholders::_1));
 
     RCLCPP_INFO(this->get_logger(), "Node initialized successfully");
 }
 
 FaceLandmarksDetNode::~FaceLandmarksDetNode()
 {
-    std::unique_lock<std::mutex> lg(mtx_img_);
-    cv_img_.notify_all();
-    lg.unlock();
+    // 通知双路缓存退出
+    {
+        std::unique_lock<std::mutex> lg(left_mtx_img_);
+        left_cv_img_.notify_all();
+    }
+    {
+        std::unique_lock<std::mutex> lg(right_mtx_img_);
+        right_cv_img_.notify_all();
+    }
 
     if (predict_task_ && predict_task_->joinable())
     {
@@ -148,16 +166,42 @@ int FaceLandmarksDetNode::Predict(
 
 // ==================== AI消息处理 ====================
 
-void FaceLandmarksDetNode::AiMsgProcess(const ai_msgs::msg::PerceptionTargets::ConstSharedPtr msg)
+void FaceLandmarksDetNode::LeftAiCallback(const ai_msgs::msg::PerceptionTargets::ConstSharedPtr msg)
 {
-    if (!msg || !rclcpp::ok() || !ai_msg_manage_) return;
-    ai_msg_manage_->Feed(msg);
+    if (!msg || !rclcpp::ok() || !left_ai_manage_) return;
+    left_ai_manage_->Feed(msg);
 }
 
-// ==================== SharedMem图像处理 ====================
-
-void FaceLandmarksDetNode::SharedMemImgProcess(const hbm_img_msgs::msg::HbmMsg1080P::ConstSharedPtr img_msg)
+void FaceLandmarksDetNode::RightAiCallback(const ai_msgs::msg::PerceptionTargets::ConstSharedPtr msg)
 {
+    if (!msg || !rclcpp::ok() || !right_ai_manage_) return;
+    right_ai_manage_->Feed(msg);
+}
+
+// ==================== 双路图像回调 ====================
+
+void FaceLandmarksDetNode::LeftImgCallback(const hbm_img_msgs::msg::HbmMsg1080P::ConstSharedPtr msg)
+{
+    ProcessImage(msg, left_ai_manage_, left_ai_pub_,
+                 left_cache_img_, left_mtx_img_, left_cv_img_, 0);
+}
+
+void FaceLandmarksDetNode::RightImgCallback(const hbm_img_msgs::msg::HbmMsg1080P::ConstSharedPtr msg)
+{
+    ProcessImage(msg, right_ai_manage_, right_ai_pub_,
+                 right_cache_img_, right_mtx_img_, right_cv_img_, 1);
+}
+
+void FaceLandmarksDetNode::ProcessImage(
+    const hbm_img_msgs::msg::HbmMsg1080P::ConstSharedPtr img_msg,
+    std::shared_ptr<AiMsgManage> ai_manage,
+    rclcpp::Publisher<ai_msgs::msg::PerceptionTargets>::SharedPtr publisher,
+    std::queue<CacheImgType>& cache_img,
+    std::mutex& mtx_img,
+    std::condition_variable& cv_img,
+    int channel_id)
+{
+    (void)ai_manage;
     if (!img_msg || !rclcpp::ok()) return;
 
     stat_img_count_++;
@@ -169,18 +213,18 @@ void FaceLandmarksDetNode::SharedMemImgProcess(const hbm_img_msgs::msg::HbmMsg10
     if (encoding != "nv12")
     {
         RCLCPP_ERROR_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
-            "Unsupported encoding: %s, only nv12 supported!", encoding.c_str());
+            "[通道%d] 不支持的格式: %s, 期望nv12", channel_id, encoding.c_str());
         return;
     }
 
-    // 构建金字塔输入 (零拷贝引用hbmem数据)
+    // 构建金字塔输入
     auto pyramid = hobot::dnn_node::ImageProc::GetNV12PyramidFromNV12Img(
         reinterpret_cast<const char *>(img_msg->data.data()),
         img_msg->height, img_msg->width,
         img_msg->height, img_msg->width);
     if (!pyramid)
     {
-        RCLCPP_ERROR(this->get_logger(), "Get NV12 pyramid fail!");
+        RCLCPP_ERROR(this->get_logger(), "[通道%d] 获取NV12金字塔失败!", channel_id);
         return;
     }
 
@@ -192,40 +236,69 @@ void FaceLandmarksDetNode::SharedMemImgProcess(const hbm_img_msgs::msg::HbmMsg10
     dnn_output->perf_preprocess.stamp_start.sec = time_start.tv_sec;
     dnn_output->perf_preprocess.stamp_start.nanosec = time_start.tv_nsec;
     dnn_output->perf_preprocess.set__type(model_name_ + "_preprocess");
+    dnn_output->channel_id = channel_id;
 
     // 加入缓存队列
-    std::unique_lock<std::mutex> lg(mtx_img_);
-    if (cache_img_.size() >= cache_len_limit_)
+    std::unique_lock<std::mutex> lg(mtx_img);
+    if (cache_img.size() >= cache_len_limit_)
     {
-        // 丢弃最旧帧
-        auto drop = cache_img_.front();
-        cache_img_.pop();
+        auto drop = cache_img.front();
+        cache_img.pop();
         stat_drop_count_++;
-        // 如果有对应的AI消息，直接发布（无关键点）
-        if (drop.first->ai_msg)
+        if (drop.first->ai_msg && publisher)
         {
-            ai_msg_publisher_->publish(std::move(drop.first->ai_msg));
+            publisher->publish(std::move(drop.first->ai_msg));
         }
     }
-    cache_img_.push(std::make_pair(std::move(dnn_output), std::move(pyramid)));
-    cv_img_.notify_one();
+    cache_img.push(std::make_pair(std::move(dnn_output), std::move(pyramid)));
+    cv_img.notify_one();
 }
 
 // ==================== 推理线程 ====================
 
 void FaceLandmarksDetNode::RunPredict()
 {
-    RCLCPP_INFO(this->get_logger(), "Predict thread started");
+    RCLCPP_INFO(this->get_logger(), "推理线程启动");
     while (rclcpp::ok())
     {
-        // 从缓存获取图像
-        std::unique_lock<std::mutex> lg(mtx_img_);
-        cv_img_.wait(lg, [this]() { return !cache_img_.empty() || !rclcpp::ok(); });
-        if (cache_img_.empty() || !rclcpp::ok()) continue;
+        CacheImgType img_data;
+        int channel_id = -1;
+        std::shared_ptr<AiMsgManage> ai_manage = nullptr;
+        rclcpp::Publisher<ai_msgs::msg::PerceptionTargets>::SharedPtr publisher = nullptr;
 
-        CacheImgType img_data = std::move(cache_img_.front());
-        cache_img_.pop();
-        lg.unlock();
+        // 尝试从左路缓存获取
+        {
+            std::unique_lock<std::mutex> lg(left_mtx_img_);
+            if (!left_cache_img_.empty())
+            {
+                img_data = std::move(left_cache_img_.front());
+                left_cache_img_.pop();
+                channel_id = 0;
+                ai_manage = left_ai_manage_;
+                publisher = left_ai_pub_;
+            }
+        }
+
+        // 如果左路为空，尝试从右路缓存获取
+        if (channel_id < 0)
+        {
+            std::unique_lock<std::mutex> lg(right_mtx_img_);
+            if (!right_cache_img_.empty())
+            {
+                img_data = std::move(right_cache_img_.front());
+                right_cache_img_.pop();
+                channel_id = 1;
+                ai_manage = right_ai_manage_;
+                publisher = right_ai_pub_;
+            }
+        }
+
+        // 如果双路都为空，等待
+        if (channel_id < 0)
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            continue;
+        }
 
         auto dnn_output = img_data.first;
         auto pyramid = img_data.second;
@@ -235,14 +308,14 @@ void FaceLandmarksDetNode::RunPredict()
         std::map<size_t, size_t> valid_roi_idx;
         ai_msgs::msg::PerceptionTargets::UniquePtr ai_msg = nullptr;
 
-        if (ai_msg_manage_->GetTargetRois(
+        if (ai_manage->GetTargetRois(
                 dnn_output->image_msg_header->stamp, rois, valid_roi_idx, ai_msg,
                 std::bind(&FaceLandmarksDetNode::NormalizeRoi, this,
                     std::placeholders::_1, std::placeholders::_2,
                     expand_scale_, pyramid->width, pyramid->height),
                 ai_msg_timeout_ms_) < 0 || ai_msg == nullptr)
         {
-            continue;  // 匹配失败，跳过
+            continue;
         }
 
         stat_match_count_++;
@@ -250,8 +323,7 @@ void FaceLandmarksDetNode::RunPredict()
         // 检查ROI有效性
         if (!rois || rois->empty())
         {
-            // 无有效ROI，直接发布原始AI消息
-            ai_msg_publisher_->publish(std::move(ai_msg));
+            if (publisher) publisher->publish(std::move(ai_msg));
             continue;
         }
 
@@ -340,7 +412,14 @@ int FaceLandmarksDetNode::NormalizeRoi(
 
 int FaceLandmarksDetNode::PostProcess(const std::shared_ptr<DnnNodeOutput> &node_output)
 {
-    if (!rclcpp::ok() || !ai_msg_publisher_) return -1;
+    if (!rclcpp::ok()) return -1;
+
+    auto output = std::dynamic_pointer_cast<FaceLandmarksDetOutput>(node_output);
+    if (!output) return -1;
+
+    // 根据channel_id选择对应的publisher
+    auto& publisher = (output->channel_id == 0) ? left_ai_pub_ : right_ai_pub_;
+    if (!publisher) return -1;
 
     // 性能统计输出 (每5秒)
     if (node_output->rt_stat && node_output->rt_stat->fps_updated)
@@ -357,9 +436,6 @@ int FaceLandmarksDetNode::PostProcess(const std::shared_ptr<DnnNodeOutput> &node
             stat_drop_count_.load(),
             stat_filter_count_.load());
     }
-
-    auto output = std::dynamic_pointer_cast<FaceLandmarksDetOutput>(node_output);
-    if (!output) return -1;
 
     struct timespec time_now = {0, 0};
     clock_gettime(CLOCK_REALTIME, &time_now);
@@ -380,7 +456,7 @@ int FaceLandmarksDetNode::PostProcess(const std::shared_ptr<DnnNodeOutput> &node
     if (landmarks_result->values.size() != output->valid_rois->size() ||
         output->valid_rois->size() != output->valid_roi_idx.size())
     {
-        ai_msg_publisher_->publish(std::move(msg));
+        publisher->publish(std::move(msg));
         return 0;
     }
 
@@ -472,6 +548,6 @@ int FaceLandmarksDetNode::PostProcess(const std::shared_ptr<DnnNodeOutput> &node
     perf_post.set__time_ms_duration(CalTimeMsDuration(perf_post.stamp_start, perf_post.stamp_end));
     ai_msg->perfs.push_back(perf_post);
 
-    ai_msg_publisher_->publish(std::move(ai_msg));
+    publisher->publish(std::move(ai_msg));
     return 0;
 }

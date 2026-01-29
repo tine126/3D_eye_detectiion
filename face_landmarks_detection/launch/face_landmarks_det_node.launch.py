@@ -1,5 +1,5 @@
 # Copyright (c) 2024，D-Robotics.
-# 精简版：仅保留在线模式，SharedMem+NV12输入
+# 人脸关键点检测：双路SharedMem+NV12输入
 
 import os
 from launch import LaunchDescription
@@ -18,18 +18,22 @@ def generate_launch_description():
 
     # 参数定义
     params = [
-        {"name": "is_sync_mode", "default": "0", "desc": "0=async, 1=sync"},
-        {"name": "model_file_name", "default": model_file_name, "desc": "model path"},
-        {"name": "score_threshold", "default": "0.5", "desc": "upstream face det threshold"},
-        {"name": "expand_scale", "default": "1.25", "desc": "ROI expand scale"},
-        {"name": "roi_size_min", "default": "16", "desc": "min ROI size"},
-        {"name": "roi_size_max", "default": "255", "desc": "max ROI size"},
-        {"name": "cache_len_limit", "default": "8", "desc": "image cache limit"},
-        {"name": "ai_msg_timeout_ms", "default": "200", "desc": "AI msg match timeout"},
-        {"name": "sharedmem_img_topic_name", "default": "/hbmem_img", "desc": "image topic"},
-        {"name": "ai_msg_sub_topic_name", "default": "/hobot_mono2d_body_detection", "desc": "AI msg sub topic"},
-        {"name": "ai_msg_pub_topic_name", "default": "/face_landmarks_detection", "desc": "AI msg pub topic"},
-        {"name": "log_level", "default": "warn", "desc": "log level"},
+        {"name": "is_sync_mode", "default": "0", "desc": "0=异步, 1=同步"},
+        {"name": "model_file_name", "default": model_file_name, "desc": "模型路径"},
+        {"name": "score_threshold", "default": "0.5", "desc": "人脸检测置信度阈值"},
+        {"name": "expand_scale", "default": "1.25", "desc": "ROI扩展比例"},
+        {"name": "roi_size_min", "default": "16", "desc": "最小ROI尺寸"},
+        {"name": "roi_size_max", "default": "255", "desc": "最大ROI尺寸"},
+        {"name": "cache_len_limit", "default": "8", "desc": "图像缓存上限"},
+        {"name": "ai_msg_timeout_ms", "default": "200", "desc": "AI消息匹配超时"},
+        # 双路topic配置
+        {"name": "left_img_topic", "default": "/hbmem_img_left", "desc": "左IR图像topic"},
+        {"name": "left_ai_sub_topic", "default": "/hobot_mono2d_body_detection_left", "desc": "左IR AI订阅topic"},
+        {"name": "left_ai_pub_topic", "default": "/face_landmarks_detection_left", "desc": "左IR AI发布topic"},
+        {"name": "right_img_topic", "default": "/hbmem_img_right", "desc": "右IR图像topic"},
+        {"name": "right_ai_sub_topic", "default": "/hobot_mono2d_body_detection_right", "desc": "右IR AI订阅topic"},
+        {"name": "right_ai_pub_topic", "default": "/face_landmarks_detection_right", "desc": "右IR AI发布topic"},
+        {"name": "log_level", "default": "warn", "desc": "日志级别"},
     ]
 
     # 声明参数
@@ -39,7 +43,10 @@ def generate_launch_description():
     ]
 
     # 节点配置
-    node_params = {p["name"]: LaunchConfiguration(p["name"]) for p in params if p["name"] != "log_level"}
+    node_params = {
+        p["name"]: LaunchConfiguration(p["name"])
+        for p in params if p["name"] != "log_level"
+    }
 
     node = Node(
         package="face_landmarks_detection",

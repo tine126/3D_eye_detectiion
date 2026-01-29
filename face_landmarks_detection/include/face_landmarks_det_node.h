@@ -35,6 +35,7 @@ struct FaceLandmarksDetOutput : public DnnNodeOutput
     std::map<size_t, size_t> valid_roi_idx;
     ai_msgs::msg::PerceptionTargets::UniquePtr ai_msg;
     ai_msgs::msg::Perf perf_preprocess;
+    int channel_id = 0;  // 通道标识 (0=左IR, 1=右IR)
 };
 
 // 精简版人脸关键点检测节点
@@ -71,25 +72,41 @@ private:
     size_t cache_len_limit_ = 8;     // 图像缓存上限
     int ai_msg_timeout_ms_ = 200;    // AI消息匹配超时(ms)
 
-    // ========== 话题配置 ==========
-    std::string sharedmem_img_topic_name_ = "/hbmem_img";
-    std::string ai_msg_sub_topic_name_ = "/hobot_mono2d_body_detection";
-    std::string ai_msg_pub_topic_name_ = "/face_landmarks_detection";
+    // ========== 话题配置 (双路) ==========
+    // 左IR
+    std::string left_img_topic_ = "/hbmem_img_left";
+    std::string left_ai_sub_topic_ = "/hobot_mono2d_body_detection_left";
+    std::string left_ai_pub_topic_ = "/face_landmarks_detection_left";
+    // 右IR
+    std::string right_img_topic_ = "/hbmem_img_right";
+    std::string right_ai_sub_topic_ = "/hobot_mono2d_body_detection_right";
+    std::string right_ai_pub_topic_ = "/face_landmarks_detection_right";
 
-    // ========== 订阅/发布 ==========
-    rclcpp::Subscription<hbm_img_msgs::msg::HbmMsg1080P>::ConstSharedPtr sharedmem_img_subscription_ = nullptr;
-    rclcpp::Subscription<ai_msgs::msg::PerceptionTargets>::SharedPtr ai_msg_subscription_ = nullptr;
-    rclcpp::Publisher<ai_msgs::msg::PerceptionTargets>::SharedPtr ai_msg_publisher_ = nullptr;
+    // ========== 订阅/发布 (双路) ==========
+    // 左IR
+    rclcpp::Subscription<hbm_img_msgs::msg::HbmMsg1080P>::ConstSharedPtr left_img_sub_ = nullptr;
+    rclcpp::Subscription<ai_msgs::msg::PerceptionTargets>::SharedPtr left_ai_sub_ = nullptr;
+    rclcpp::Publisher<ai_msgs::msg::PerceptionTargets>::SharedPtr left_ai_pub_ = nullptr;
+    // 右IR
+    rclcpp::Subscription<hbm_img_msgs::msg::HbmMsg1080P>::ConstSharedPtr right_img_sub_ = nullptr;
+    rclcpp::Subscription<ai_msgs::msg::PerceptionTargets>::SharedPtr right_ai_sub_ = nullptr;
+    rclcpp::Publisher<ai_msgs::msg::PerceptionTargets>::SharedPtr right_ai_pub_ = nullptr;
 
-    // ========== 内部组件 ==========
-    std::shared_ptr<AiMsgManage> ai_msg_manage_ = nullptr;
+    // ========== 内部组件 (双路) ==========
+    std::shared_ptr<AiMsgManage> left_ai_manage_ = nullptr;
+    std::shared_ptr<AiMsgManage> right_ai_manage_ = nullptr;
     std::shared_ptr<std::thread> predict_task_ = nullptr;
 
-    // ========== 图像缓存 ==========
+    // ========== 图像缓存 (双路) ==========
     using CacheImgType = std::pair<std::shared_ptr<FaceLandmarksDetOutput>, std::shared_ptr<NV12PyramidInput>>;
-    std::queue<CacheImgType> cache_img_;
-    std::mutex mtx_img_;
-    std::condition_variable cv_img_;
+    // 左IR缓存
+    std::queue<CacheImgType> left_cache_img_;
+    std::mutex left_mtx_img_;
+    std::condition_variable left_cv_img_;
+    // 右IR缓存
+    std::queue<CacheImgType> right_cache_img_;
+    std::mutex right_mtx_img_;
+    std::condition_variable right_cv_img_;
 
     // ========== 性能统计 ==========
     std::atomic<uint64_t> stat_img_count_{0};      // 接收图像计数
@@ -99,8 +116,19 @@ private:
     std::atomic<uint64_t> stat_filter_count_{0};   // ROI过滤计数
 
     // ========== 私有方法 ==========
-    void SharedMemImgProcess(const hbm_img_msgs::msg::HbmMsg1080P::ConstSharedPtr msg);
-    void AiMsgProcess(const ai_msgs::msg::PerceptionTargets::ConstSharedPtr msg);
+    // 双路回调
+    void LeftImgCallback(const hbm_img_msgs::msg::HbmMsg1080P::ConstSharedPtr msg);
+    void RightImgCallback(const hbm_img_msgs::msg::HbmMsg1080P::ConstSharedPtr msg);
+    void LeftAiCallback(const ai_msgs::msg::PerceptionTargets::ConstSharedPtr msg);
+    void RightAiCallback(const ai_msgs::msg::PerceptionTargets::ConstSharedPtr msg);
+    // 通用处理
+    void ProcessImage(const hbm_img_msgs::msg::HbmMsg1080P::ConstSharedPtr msg,
+                      std::shared_ptr<AiMsgManage> ai_manage,
+                      rclcpp::Publisher<ai_msgs::msg::PerceptionTargets>::SharedPtr publisher,
+                      std::queue<CacheImgType>& cache_img,
+                      std::mutex& mtx_img,
+                      std::condition_variable& cv_img,
+                      int channel_id);
     void RunPredict();
     int Predict(std::vector<std::shared_ptr<DNNInput>> &inputs,
                 const std::shared_ptr<std::vector<hbDNNRoi>> rois,

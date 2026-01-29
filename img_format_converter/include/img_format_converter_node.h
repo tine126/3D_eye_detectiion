@@ -20,16 +20,24 @@ public:
 
 private:
     // ========== 话题配置 ==========
-    std::string sub_topic_name_ = "/camera/ir/image_raw";
-    std::string pub_topic_name_ = "/hbmem_img";
+    // 左IR
+    std::string left_sub_topic_ = "/camera/left_ir/image_raw";
+    std::string left_pub_topic_ = "/hbmem_img_left";
+    // 右IR
+    std::string right_sub_topic_ = "/camera/right_ir/image_raw";
+    std::string right_pub_topic_ = "/hbmem_img_right";
 
     // ========== 图像配置 ==========
     int image_width_ = 1280;
     int image_height_ = 800;
 
     // ========== 订阅/发布 ==========
-    rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr image_subscription_ = nullptr;
-    rclcpp::Publisher<hbm_img_msgs::msg::HbmMsg1080P>::SharedPtr hbmem_publisher_ = nullptr;
+    // 左IR
+    rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr left_subscription_ = nullptr;
+    rclcpp::Publisher<hbm_img_msgs::msg::HbmMsg1080P>::SharedPtr left_publisher_ = nullptr;
+    // 右IR
+    rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr right_subscription_ = nullptr;
+    rclcpp::Publisher<hbm_img_msgs::msg::HbmMsg1080P>::SharedPtr right_publisher_ = nullptr;
 
     // ========== 性能统计 ==========
     std::atomic<uint64_t> stat_frame_count_{0};
@@ -47,7 +55,11 @@ private:
     std::atomic<int64_t> stat_min_e2e_us_{INT64_MAX};
 
     // ========== 私有方法 ==========
-    void ImageCallback(const sensor_msgs::msg::Image::ConstSharedPtr msg);
+    void LeftImageCallback(const sensor_msgs::msg::Image::ConstSharedPtr msg);
+    void RightImageCallback(const sensor_msgs::msg::Image::ConstSharedPtr msg);
+    void ProcessImage(const sensor_msgs::msg::Image::ConstSharedPtr msg,
+                      rclcpp::Publisher<hbm_img_msgs::msg::HbmMsg1080P>::SharedPtr publisher,
+                      const std::string& channel_name);
     void ConvertMono8ToNV12(const uint8_t* mono8_data, uint8_t* nv12_data,
                             int width, int height);
     void PrintStatistics();

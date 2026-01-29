@@ -10,37 +10,59 @@ ImgFormatConverterNode::ImgFormatConverterNode(
     : Node(node_name, options)
 {
     // 声明并获取参数
-    this->declare_parameter("sub_topic_name", sub_topic_name_);
-    this->declare_parameter("pub_topic_name", pub_topic_name_);
+    this->declare_parameter("left_sub_topic", left_sub_topic_);
+    this->declare_parameter("left_pub_topic", left_pub_topic_);
+    this->declare_parameter("right_sub_topic", right_sub_topic_);
+    this->declare_parameter("right_pub_topic", right_pub_topic_);
     this->declare_parameter("image_width", image_width_);
     this->declare_parameter("image_height", image_height_);
 
-    this->get_parameter("sub_topic_name", sub_topic_name_);
-    this->get_parameter("pub_topic_name", pub_topic_name_);
+    this->get_parameter("left_sub_topic", left_sub_topic_);
+    this->get_parameter("left_pub_topic", left_pub_topic_);
+    this->get_parameter("right_sub_topic", right_sub_topic_);
+    this->get_parameter("right_pub_topic", right_pub_topic_);
     this->get_parameter("image_width", image_width_);
     this->get_parameter("image_height", image_height_);
 
-    RCLCPP_INFO(this->get_logger(), "Parameters:");
-    RCLCPP_INFO(this->get_logger(), "  sub_topic_name: %s", sub_topic_name_.c_str());
-    RCLCPP_INFO(this->get_logger(), "  pub_topic_name: %s", pub_topic_name_.c_str());
-    RCLCPP_INFO(this->get_logger(), "  image_size: %dx%d", image_width_, image_height_);
+    RCLCPP_INFO(this->get_logger(), "参数配置:");
+    RCLCPP_INFO(this->get_logger(), "  左IR: %s -> %s", left_sub_topic_.c_str(), left_pub_topic_.c_str());
+    RCLCPP_INFO(this->get_logger(), "  右IR: %s -> %s", right_sub_topic_.c_str(), right_pub_topic_.c_str());
+    RCLCPP_INFO(this->get_logger(), "  图像尺寸: %dx%d", image_width_, image_height_);
 
-    // 创建SharedMem发布者
-    hbmem_publisher_ = this->create_publisher<hbm_img_msgs::msg::HbmMsg1080P>(
-        pub_topic_name_, rclcpp::SensorDataQoS());
+    // 创建左IR发布者和订阅者
+    left_publisher_ = this->create_publisher<hbm_img_msgs::msg::HbmMsg1080P>(
+        left_pub_topic_, rclcpp::SensorDataQoS());
+    left_subscription_ = this->create_subscription<sensor_msgs::msg::Image>(
+        left_sub_topic_, rclcpp::SensorDataQoS(),
+        std::bind(&ImgFormatConverterNode::LeftImageCallback, this, std::placeholders::_1));
 
-    // 创建图像订阅者
-    image_subscription_ = this->create_subscription<sensor_msgs::msg::Image>(
-        sub_topic_name_, rclcpp::SensorDataQoS(),
-        std::bind(&ImgFormatConverterNode::ImageCallback, this, std::placeholders::_1));
+    // 创建右IR发布者和订阅者
+    right_publisher_ = this->create_publisher<hbm_img_msgs::msg::HbmMsg1080P>(
+        right_pub_topic_, rclcpp::SensorDataQoS());
+    right_subscription_ = this->create_subscription<sensor_msgs::msg::Image>(
+        right_sub_topic_, rclcpp::SensorDataQoS(),
+        std::bind(&ImgFormatConverterNode::RightImageCallback, this, std::placeholders::_1));
 
     // 初始化统计
     stat_start_time_ = std::chrono::steady_clock::now();
 
-    RCLCPP_INFO(this->get_logger(), "Node initialized successfully");
+    RCLCPP_INFO(this->get_logger(), "节点初始化完成");
 }
 
-void ImgFormatConverterNode::ImageCallback(const sensor_msgs::msg::Image::ConstSharedPtr msg)
+void ImgFormatConverterNode::LeftImageCallback(const sensor_msgs::msg::Image::ConstSharedPtr msg)
+{
+    ProcessImage(msg, left_publisher_, "左IR");
+}
+
+void ImgFormatConverterNode::RightImageCallback(const sensor_msgs::msg::Image::ConstSharedPtr msg)
+{
+    ProcessImage(msg, right_publisher_, "右IR");
+}
+
+void ImgFormatConverterNode::ProcessImage(
+    const sensor_msgs::msg::Image::ConstSharedPtr msg,
+    rclcpp::Publisher<hbm_img_msgs::msg::HbmMsg1080P>::SharedPtr publisher,
+    const std::string& channel_name)
 {
     if (!msg || !rclcpp::ok()) return;
 
@@ -50,7 +72,7 @@ void ImgFormatConverterNode::ImageCallback(const sensor_msgs::msg::Image::ConstS
     if (msg->encoding != "mono8")
     {
         RCLCPP_ERROR_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
-            "Unsupported encoding: %s, expected mono8", msg->encoding.c_str());
+            "[%s] 不支持的格式: %s, 期望mono8", channel_name.c_str(), msg->encoding.c_str());
         return;
     }
 
@@ -59,8 +81,8 @@ void ImgFormatConverterNode::ImageCallback(const sensor_msgs::msg::Image::ConstS
         static_cast<int>(msg->height) != image_height_)
     {
         RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
-            "Image size mismatch: got %ux%u, expected %dx%d",
-            msg->width, msg->height, image_width_, image_height_);
+            "[%s] 尺寸不匹配: 收到%ux%u, 期望%dx%d",
+            channel_name.c_str(), msg->width, msg->height, image_width_, image_height_);
     }
 
     // 创建输出消息
@@ -84,7 +106,7 @@ void ImgFormatConverterNode::ImageCallback(const sensor_msgs::msg::Image::ConstS
     hbmem_msg->data_size = msg->width * msg->height * 3 / 2;
 
     // 发布消息
-    hbmem_publisher_->publish(std::move(hbmem_msg));
+    publisher->publish(std::move(hbmem_msg));
 
     // 计算转换耗时
     auto end_time = std::chrono::steady_clock::now();

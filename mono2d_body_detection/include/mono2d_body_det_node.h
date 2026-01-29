@@ -60,6 +60,8 @@ struct FasterRcnnOutput : public DnnNodeOutput {
   std::shared_ptr<std_msgs::msg::Header> image_msg_header = nullptr;
   struct timespec preprocess_timespec_start;
   struct timespec preprocess_timespec_end;
+  // 标识数据来源通道 (0=左IR, 1=右IR)
+  int channel_id = 0;
 };
 
 // 精简版人脸检测节点
@@ -98,14 +100,23 @@ class Mono2dBodyDetNode : public DnnNode {
   // 同步/异步推理模式: 0=异步(默认), 1=同步
   int is_sync_mode_ = 0;
 
-  // ========== 订阅配置 (只支持SharedMem) ==========
-  std::string sharedmem_img_topic_name_ = "/hbmem_img";
+  // ========== 订阅配置 (双路SharedMem) ==========
+  // 左IR
+  std::string left_img_topic_ = "/hbmem_img_left";
   rclcpp::Subscription<hbm_img_msgs::msg::HbmMsg1080P>::ConstSharedPtr
-      sharedmem_img_subscription_ = nullptr;
+      left_img_subscription_ = nullptr;
+  // 右IR
+  std::string right_img_topic_ = "/hbmem_img_right";
+  rclcpp::Subscription<hbm_img_msgs::msg::HbmMsg1080P>::ConstSharedPtr
+      right_img_subscription_ = nullptr;
 
-  // ========== 发布配置 ==========
-  std::string ai_msg_pub_topic_name_ = "/hobot_mono2d_body_detection";
-  rclcpp::Publisher<ai_msgs::msg::PerceptionTargets>::SharedPtr msg_publisher_ = nullptr;
+  // ========== 发布配置 (双路输出) ==========
+  // 左IR
+  std::string left_pub_topic_ = "/hobot_mono2d_body_detection_left";
+  rclcpp::Publisher<ai_msgs::msg::PerceptionTargets>::SharedPtr left_publisher_ = nullptr;
+  // 右IR
+  std::string right_pub_topic_ = "/hobot_mono2d_body_detection_right";
+  rclcpp::Publisher<ai_msgs::msg::PerceptionTargets>::SharedPtr right_publisher_ = nullptr;
 
   // ========== 内部组件 ==========
   std::shared_ptr<FasterRcnnKpsParserPara> parser_para_ = nullptr;
@@ -115,7 +126,12 @@ class Mono2dBodyDetNode : public DnnNode {
   int Predict(std::vector<std::shared_ptr<DNNInput>>& inputs,
               std::shared_ptr<DnnNodeOutput> dnn_output);
 
-  void SharedMemImgProcess(const hbm_img_msgs::msg::HbmMsg1080P::ConstSharedPtr msg);
+  void LeftImgCallback(const hbm_img_msgs::msg::HbmMsg1080P::ConstSharedPtr msg);
+  void RightImgCallback(const hbm_img_msgs::msg::HbmMsg1080P::ConstSharedPtr msg);
+  void ProcessImage(const hbm_img_msgs::msg::HbmMsg1080P::ConstSharedPtr msg,
+                    rclcpp::Publisher<ai_msgs::msg::PerceptionTargets>::SharedPtr publisher,
+                    const std::string& channel_name,
+                    int channel_id);
 };
 
 #endif  // MONO2D_BODY_DET_NODE_H_

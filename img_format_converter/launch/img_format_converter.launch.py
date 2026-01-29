@@ -1,5 +1,5 @@
 # Copyright (c) 2024，D-Robotics.
-# img_format_converter: mono8 -> nv12 格式转换节点
+# img_format_converter: 双路IR mono8 -> nv12 格式转换节点
 
 from launch import LaunchDescription
 from launch.substitutions import LaunchConfiguration
@@ -10,11 +10,16 @@ from launch_ros.actions import Node
 def generate_launch_description():
     # 参数定义
     params = [
-        {"name": "sub_topic_name", "default": "/camera/ir/image_raw", "desc": "Input topic (mono8)"},
-        {"name": "pub_topic_name", "default": "/hbmem_img", "desc": "Output topic (nv12)"},
-        {"name": "image_width", "default": "1280", "desc": "Image width"},
-        {"name": "image_height", "default": "800", "desc": "Image height"},
-        {"name": "log_level", "default": "warn", "desc": "Log level"},
+        # 左IR
+        {"name": "left_sub_topic", "default": "/camera/left_ir/image_raw", "desc": "左IR输入topic"},
+        {"name": "left_pub_topic", "default": "/hbmem_img_left", "desc": "左IR输出topic"},
+        # 右IR
+        {"name": "right_sub_topic", "default": "/camera/right_ir/image_raw", "desc": "右IR输入topic"},
+        {"name": "right_pub_topic", "default": "/hbmem_img_right", "desc": "右IR输出topic"},
+        # 图像配置
+        {"name": "image_width", "default": "1280", "desc": "图像宽度"},
+        {"name": "image_height", "default": "800", "desc": "图像高度"},
+        {"name": "log_level", "default": "warn", "desc": "日志级别"},
     ]
 
     # 声明参数

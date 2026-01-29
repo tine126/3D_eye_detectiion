@@ -111,33 +111,35 @@ Mono2dBodyDetNode::Mono2dBodyDetNode(const NodeOptions& options)
   // 声明参数
   this->declare_parameter<int>("is_sync_mode", is_sync_mode_);
   this->declare_parameter<std::string>("model_file_name", model_file_name_);
-  this->declare_parameter<std::string>("ai_msg_pub_topic_name", ai_msg_pub_topic_name_);
-  this->declare_parameter<std::string>("sharedmem_img_topic_name", sharedmem_img_topic_name_);
+  this->declare_parameter<std::string>("left_img_topic", left_img_topic_);
+  this->declare_parameter<std::string>("left_pub_topic", left_pub_topic_);
+  this->declare_parameter<std::string>("right_img_topic", right_img_topic_);
+  this->declare_parameter<std::string>("right_pub_topic", right_pub_topic_);
   this->declare_parameter<double>("score_threshold", score_threshold_);
 
   // 获取参数
   this->get_parameter<int>("is_sync_mode", is_sync_mode_);
   this->get_parameter<std::string>("model_file_name", model_file_name_);
-  this->get_parameter<std::string>("ai_msg_pub_topic_name", ai_msg_pub_topic_name_);
-  this->get_parameter<std::string>("sharedmem_img_topic_name", sharedmem_img_topic_name_);
+  this->get_parameter<std::string>("left_img_topic", left_img_topic_);
+  this->get_parameter<std::string>("left_pub_topic", left_pub_topic_);
+  this->get_parameter<std::string>("right_img_topic", right_img_topic_);
+  this->get_parameter<std::string>("right_pub_topic", right_pub_topic_);
   this->get_parameter<double>("score_threshold", score_threshold_);
 
   // 打印关键配置
   RCLCPP_WARN(rclcpp::get_logger("mono2d_body_det"),
-    "\n========== Face Detection Node (Lite) ==========\n"
+    "\n========== 人脸检测节点 (双路) ==========\n"
     " model_file_name: %s\n"
     " is_sync_mode: %d (%s)\n"
     " score_threshold: %.2f\n"
-    " output_index: %d (face only)\n"
-    " sharedmem_img_topic: %s\n"
-    " ai_msg_pub_topic: %s\n"
-    "================================================",
+    " 左IR: %s -> %s\n"
+    " 右IR: %s -> %s\n"
+    "==========================================",
     model_file_name_.c_str(),
-    is_sync_mode_, is_sync_mode_ == 0 ? "async" : "sync",
+    is_sync_mode_, is_sync_mode_ == 0 ? "异步" : "同步",
     score_threshold_,
-    face_box_output_index_,
-    sharedmem_img_topic_name_.c_str(),
-    ai_msg_pub_topic_name_.c_str());
+    left_img_topic_.c_str(), left_pub_topic_.c_str(),
+    right_img_topic_.c_str(), right_pub_topic_.c_str());
 
   // 初始化模型
   if (Init() != 0) {
@@ -161,9 +163,11 @@ Mono2dBodyDetNode::Mono2dBodyDetNode(const NodeOptions& options)
                 "Model name: %s", model_name_.c_str());
   }
 
-  // 创建发布者
-  msg_publisher_ = this->create_publisher<ai_msgs::msg::PerceptionTargets>(
-      ai_msg_pub_topic_name_, 10);
+  // 创建双路发布者
+  left_publisher_ = this->create_publisher<ai_msgs::msg::PerceptionTargets>(
+      left_pub_topic_, 10);
+  right_publisher_ = this->create_publisher<ai_msgs::msg::PerceptionTargets>(
+      right_pub_topic_, 10);
 
   // 获取模型输入尺寸
   if (GetModelInputSize(0, model_input_width_, model_input_height_) < 0) {
@@ -181,14 +185,22 @@ Mono2dBodyDetNode::Mono2dBodyDetNode(const NodeOptions& options)
       "Zero-copy not enabled! Set RMW_FASTRTPS_USE_QOS_FROM_XML=1 for best performance");
   }
 
-  // 创建SharedMem订阅
+  // 创建双路SharedMem订阅
   RCLCPP_INFO(rclcpp::get_logger("mono2d_body_det"),
-              "Subscribe to: %s (SharedMem)", sharedmem_img_topic_name_.c_str());
-  sharedmem_img_subscription_ =
+              "订阅左IR: %s", left_img_topic_.c_str());
+  left_img_subscription_ =
       this->create_subscription<hbm_img_msgs::msg::HbmMsg1080P>(
-          sharedmem_img_topic_name_,
+          left_img_topic_,
           rclcpp::SensorDataQoS(),
-          std::bind(&Mono2dBodyDetNode::SharedMemImgProcess, this, std::placeholders::_1));
+          std::bind(&Mono2dBodyDetNode::LeftImgCallback, this, std::placeholders::_1));
+
+  RCLCPP_INFO(rclcpp::get_logger("mono2d_body_det"),
+              "订阅右IR: %s", right_img_topic_.c_str());
+  right_img_subscription_ =
+      this->create_subscription<hbm_img_msgs::msg::HbmMsg1080P>(
+          right_img_topic_,
+          rclcpp::SensorDataQoS(),
+          std::bind(&Mono2dBodyDetNode::RightImgCallback, this, std::placeholders::_1));
 }
 
 Mono2dBodyDetNode::~Mono2dBodyDetNode() {}
@@ -212,10 +224,27 @@ int Mono2dBodyDetNode::Predict(
   return Run(inputs, dnn_output, nullptr, is_sync_mode_ == 1);
 }
 
-// ==================== SharedMem图像处理 ====================
+// ==================== 双路图像回调 ====================
 
-void Mono2dBodyDetNode::SharedMemImgProcess(
-    const hbm_img_msgs::msg::HbmMsg1080P::ConstSharedPtr img_msg) {
+void Mono2dBodyDetNode::LeftImgCallback(
+    const hbm_img_msgs::msg::HbmMsg1080P::ConstSharedPtr msg) {
+  ProcessImage(msg, left_publisher_, "左IR", 0);
+}
+
+void Mono2dBodyDetNode::RightImgCallback(
+    const hbm_img_msgs::msg::HbmMsg1080P::ConstSharedPtr msg) {
+  ProcessImage(msg, right_publisher_, "右IR", 1);
+}
+
+// ==================== 图像处理 ====================
+
+void Mono2dBodyDetNode::ProcessImage(
+    const hbm_img_msgs::msg::HbmMsg1080P::ConstSharedPtr img_msg,
+    rclcpp::Publisher<ai_msgs::msg::PerceptionTargets>::SharedPtr publisher,
+    const std::string& channel_name,
+    int channel_id) {
+  (void)publisher;
+  (void)channel_name;
   if (!img_msg || !rclcpp::ok()) {
     return;
   }
@@ -273,6 +302,7 @@ void Mono2dBodyDetNode::SharedMemImgProcess(
   dnn_output->image_msg_header->set__frame_id(std::to_string(img_msg->index));
   dnn_output->image_msg_header->set__stamp(img_msg->time_stamp);
   dnn_output->preprocess_timespec_start = time_start;
+  dnn_output->channel_id = channel_id;
 
   struct timespec time_now = {0, 0};
   clock_gettime(CLOCK_REALTIME, &time_now);
@@ -293,7 +323,7 @@ void Mono2dBodyDetNode::SharedMemImgProcess(
 // ==================== 后处理函数 ====================
 
 int Mono2dBodyDetNode::PostProcess(const std::shared_ptr<DnnNodeOutput>& output) {
-  if (!rclcpp::ok() || !msg_publisher_) {
+  if (!rclcpp::ok()) {
     return -1;
   }
 
@@ -422,8 +452,11 @@ int Mono2dBodyDetNode::PostProcess(const std::shared_ptr<DnnNodeOutput>& output)
           pub_data->targets.size());
     }
 
-    // 发布结果
-    msg_publisher_->publish(std::move(pub_data));
+    // 发布结果 (根据channel_id选择对应的publisher)
+    auto& publisher = (fasterRcnn_output->channel_id == 0) ? left_publisher_ : right_publisher_;
+    if (publisher) {
+      publisher->publish(std::move(pub_data));
+    }
   }
 
   return 0;
