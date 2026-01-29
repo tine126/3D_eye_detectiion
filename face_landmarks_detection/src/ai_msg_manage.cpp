@@ -61,7 +61,7 @@ int AiMsgManage::GetTargetRois(const std_msgs::msg::Header::_stamp_type &msg_ts,
         for (const auto &roi : target.rois)
         {
             RCLCPP_INFO(logger_, "=> roi.type: %s", roi.type.c_str());
-            if ("face" == roi.type)
+            if ("head" == roi.type)
             {
                 RCLCPP_INFO(logger_, "=> recv roi x_offset: %d y_offset: %d width: %d height: %d", roi.rect.x_offset, roi.rect.y_offset, roi.rect.width, roi.rect.height);
 

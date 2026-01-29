@@ -134,6 +134,9 @@ private:
      */
     void RosImgProcess(const sensor_msgs::msg::Image::ConstSharedPtr msg);
 
+    // 辅助函数：根据 frame_id 选择正确的发布器
+    void PublishAiMsg(ai_msgs::msg::PerceptionTargets::UniquePtr msg, const std::string& frame_id);
+
     // =================================================================================================================================
 #ifdef SHARED_MEM_ENABLED
     // sharedmem img sub
@@ -190,16 +193,30 @@ private:
     // ai_msg pub
     rclcpp::Publisher<ai_msgs::msg::PerceptionTargets>::SharedPtr ai_msg_publisher_ = nullptr;
 
+    // 双路模式
+    int dual_mode_ = 0;
+    // 右路 ai_msg pub
+    std::string ai_msg_pub_topic_name_right_ = "/face_landmarks_right";
+    rclcpp::Publisher<ai_msgs::msg::PerceptionTargets>::SharedPtr ai_msg_publisher_right_ = nullptr;
+
     // ai_msg sub topic
     std::string ai_msg_sub_topic_name_ = "/hobot_mono2d_body_detection";
     // ai_msg sub
     rclcpp::Subscription<ai_msgs::msg::PerceptionTargets>::SharedPtr ai_msg_subscription_ = nullptr;
+
+    // 右路 ai_msg sub (双路模式)
+    std::string ai_msg_sub_topic_name_right_ = "/body_detection_right";
+    rclcpp::Subscription<ai_msgs::msg::PerceptionTargets>::SharedPtr ai_msg_subscription_right_ = nullptr;
 
     // image sub topic
     // Supports sub to the original image | compressed image "/image_raw/compressed" | sensor_msgs::msg::CompressedImage
     std::string ros_img_topic_name_ = "/image_raw";
     // image sub
     rclcpp::Subscription<sensor_msgs::msg::Image>::ConstSharedPtr ros_img_subscription_ = nullptr;
+
+    // 右路 image sub (双路模式)
+    std::string ros_img_topic_name_right_ = "/image_right";
+    rclcpp::Subscription<sensor_msgs::msg::Image>::ConstSharedPtr ros_img_subscription_right_ = nullptr;
 
     // use to process ai msg
     std::shared_ptr<AiMsgManage> ai_msg_manage_ = nullptr;
@@ -219,6 +236,12 @@ private:
     // ROI cache for face tracking
     std::shared_ptr<RoiCache> roi_cache_ = std::make_shared<RoiCache>();
 
+    // 右路 ROI cache (双路模式)
+    std::shared_ptr<RoiCache> roi_cache_right_ = std::make_shared<RoiCache>();
+
+    // 双路模式互斥锁
+    std::mutex dual_mode_mutex_;
+
     // Timing parameters
     int timing_log_interval_ = 30;
     std::atomic<int> timing_frame_count_{0};
@@ -226,6 +249,10 @@ private:
     // Trigger publisher for body detection
     rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr trigger_pub_ = nullptr;
     std::string trigger_topic_name_ = "/trigger_body_detection_left";
+
+    // 右路 trigger publisher (双路模式)
+    rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr trigger_pub_right_ = nullptr;
+    std::string trigger_topic_name_right_ = "/trigger_body_detection_right";
 };
 
 #endif

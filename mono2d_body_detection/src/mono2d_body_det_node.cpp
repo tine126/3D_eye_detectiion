@@ -310,6 +310,11 @@ Mono2dBodyDetNode::Mono2dBodyDetNode(const NodeOptions& options)
   this->declare_parameter<int>("dump_render_img", dump_render_img_);
   this->declare_parameter<int>("track_mode", track_mode_);
   this->declare_parameter<int>("model_type", model_type_);
+  this->declare_parameter<int>("dual_mode", dual_mode_);
+  this->declare_parameter<std::string>("ros_img_topic_name_right",
+                                       ros_img_topic_name_right_);
+  this->declare_parameter<std::string>("ai_msg_pub_topic_name_right",
+                                       ai_msg_pub_topic_name_right_);
 
   this->get_parameter<int>("is_sync_mode", is_sync_mode_);
   this->get_parameter<std::string>("model_file_name", model_file_name_);
@@ -326,6 +331,11 @@ Mono2dBodyDetNode::Mono2dBodyDetNode(const NodeOptions& options)
   this->get_parameter<int>("dump_render_img", dump_render_img_);
   this->get_parameter<int>("track_mode", track_mode_);
   this->get_parameter<int>("model_type", model_type_);
+  this->get_parameter<int>("dual_mode", dual_mode_);
+  this->get_parameter<std::string>("ros_img_topic_name_right",
+                                   ros_img_topic_name_right_);
+  this->get_parameter<std::string>("ai_msg_pub_topic_name_right",
+                                   ai_msg_pub_topic_name_right_);
 
   {
     std::stringstream ss;
@@ -339,7 +349,12 @@ Mono2dBodyDetNode::Mono2dBodyDetNode(const NodeOptions& options)
       << "\n trigger_interval: " << trigger_interval_
       << "\n dump_render_img: " << dump_render_img_
       << "\n track_mode: " << track_mode_
-      << "\n model_type: " << model_type_;
+      << "\n model_type: " << model_type_
+      << "\n dual_mode: " << dual_mode_;
+    if (dual_mode_) {
+      ss << "\n ros_img_topic_name_right: " << ros_img_topic_name_right_
+         << "\n ai_msg_pub_topic_name_right: " << ai_msg_pub_topic_name_right_;
+    }
     RCLCPP_WARN(rclcpp::get_logger("mono2d_body_det"), "%s", ss.str().c_str());
   }
 
@@ -404,6 +419,15 @@ Mono2dBodyDetNode::Mono2dBodyDetNode(const NodeOptions& options)
   msg_publisher_ = this->create_publisher<ai_msgs::msg::PerceptionTargets>(
       ai_msg_pub_topic_name_, 10);
 
+  // 双路模式：创建右路发布器
+  if (dual_mode_) {
+    msg_publisher_right_ = this->create_publisher<ai_msgs::msg::PerceptionTargets>(
+        ai_msg_pub_topic_name_right_, 10);
+    RCLCPP_WARN(rclcpp::get_logger("mono2d_body_det"),
+                "Dual mode enabled, right publisher topic: %s",
+                ai_msg_pub_topic_name_right_.c_str());
+  }
+
   if (GetModelInputSize(0, model_input_width_, model_input_height_) < 0) {
     RCLCPP_ERROR(rclcpp::get_logger("mono2d_body_det"),
                  "Get model input size fail!");
@@ -454,6 +478,18 @@ Mono2dBodyDetNode::Mono2dBodyDetNode(const NodeOptions& options)
         10,
         std::bind(
             &Mono2dBodyDetNode::RosImgProcess, this, std::placeholders::_1));
+
+    // 双路模式：创建右路图像订阅器
+    if (dual_mode_) {
+      RCLCPP_WARN(rclcpp::get_logger("mono2d_body_det"),
+                  "Create right subscription with topic_name: %s",
+                  ros_img_topic_name_right_.c_str());
+      ros_img_subscription_right_ = this->create_subscription<sensor_msgs::msg::Image>(
+          ros_img_topic_name_right_,
+          10,
+          std::bind(
+              &Mono2dBodyDetNode::RosImgProcess, this, std::placeholders::_1));
+    }
   }
 
   // Create external trigger subscriptions
@@ -841,7 +877,14 @@ int Mono2dBodyDetNode::PostProcess(
     if (dump_render_img_) {
       Render(fasterRcnn_output->pyramid, pub_data);
     }
-    msg_publisher_->publish(std::move(pub_data));
+
+    // 双路模式：根据 frame_id 选择发布器
+    if (dual_mode_ && msg_publisher_right_ &&
+        fasterRcnn_output->image_msg_header->frame_id.find("right") != std::string::npos) {
+      msg_publisher_right_->publish(std::move(pub_data));
+    } else {
+      msg_publisher_->publish(std::move(pub_data));
+    }
 
     // Timing log
     int count = ++timing_frame_count_;
@@ -867,7 +910,9 @@ int Mono2dBodyDetNode::Predict(
   RCLCPP_DEBUG(rclcpp::get_logger("mono2d_body_det"),
                "task_num: %d",
                dnn_node_para_ptr_->task_num);
-  return Run(inputs, dnn_output, rois, is_sync_mode_ == 1 ? true : false);
+  // 双路模式下强制使用同步推理，避免并发访问BPU资源
+  bool sync_mode = (is_sync_mode_ == 1) || (dual_mode_ == 1);
+  return Run(inputs, dnn_output, rois, sync_mode);
 }
 
 void Mono2dBodyDetNode::RosImgProcess(
@@ -901,6 +946,9 @@ void Mono2dBodyDetNode::RosImgProcess(
   if (!should_detect) {
     return;
   }
+
+  // 双路模式：使用互斥锁保护推理过程，避免并发访问
+  std::unique_lock<std::mutex> lock(dual_mode_mutex_);
 
   std::stringstream ss;
   ss << "RosImgProcess Recved img encoding: " << img_msg->encoding

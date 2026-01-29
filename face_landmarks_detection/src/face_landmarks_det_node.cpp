@@ -44,6 +44,11 @@ FaceLandmarksDetNode::FaceLandmarksDetNode(const std::string &node_name, const N
     ai_msg_pub_topic_name_ = this->declare_parameter<std::string>("ai_msg_pub_topic_name", ai_msg_pub_topic_name_);
     ai_msg_sub_topic_name_ = this->declare_parameter<std::string>("ai_msg_sub_topic_name", ai_msg_sub_topic_name_);
     ros_img_topic_name_ = this->declare_parameter<std::string>("ros_img_topic_name", ros_img_topic_name_);
+    // 双路模式参数
+    dual_mode_ = this->declare_parameter<int>("dual_mode", dual_mode_);
+    ai_msg_pub_topic_name_right_ = this->declare_parameter<std::string>("ai_msg_pub_topic_name_right", ai_msg_pub_topic_name_right_);
+    ai_msg_sub_topic_name_right_ = this->declare_parameter<std::string>("ai_msg_sub_topic_name_right", ai_msg_sub_topic_name_right_);
+    ros_img_topic_name_right_ = this->declare_parameter<std::string>("ros_img_topic_name_right", ros_img_topic_name_right_);
 #ifdef SHARED_MEM_ENABLED
     sharedmem_img_topic_name_ = this->declare_parameter<std::string>("sharedmem_img_topic_name", sharedmem_img_topic_name_);
 #endif
@@ -57,6 +62,7 @@ FaceLandmarksDetNode::FaceLandmarksDetNode(const std::string &node_name, const N
                                                  << "=> ai_msg_pub_topic_name: " << ai_msg_pub_topic_name_ << std::endl
                                                  << "=> ai_msg_sub_topic_name: " << ai_msg_sub_topic_name_ << std::endl
                                                  << "=> ros_img_topic_name: " << ros_img_topic_name_ << std::endl
+                                                 << "=> dual_mode: " << dual_mode_ << std::endl
 #ifdef SHARED_MEM_ENABLED
                                                  << "=> sharedmem_img_topic_name: " << sharedmem_img_topic_name_
 #endif
@@ -114,6 +120,16 @@ FaceLandmarksDetNode::FaceLandmarksDetNode(const std::string &node_name, const N
         RCLCPP_INFO(this->get_logger(), "Create subscription with topic_name: %s", ai_msg_sub_topic_name_.c_str());
         ai_msg_subscription_ = this->create_subscription<ai_msgs::msg::PerceptionTargets>(ai_msg_sub_topic_name_, 10, std::bind(&FaceLandmarksDetNode::AiMsgProcess, this, std::placeholders::_1));
 
+        // 双路模式：创建右路发布器和订阅器
+        if (dual_mode_) {
+            RCLCPP_WARN(this->get_logger(), "Dual mode enabled");
+            RCLCPP_INFO(this->get_logger(), "ai_msg_pub_topic_name_right: %s", ai_msg_pub_topic_name_right_.data());
+            ai_msg_publisher_right_ = this->create_publisher<ai_msgs::msg::PerceptionTargets>(ai_msg_pub_topic_name_right_, 10);
+
+            RCLCPP_INFO(this->get_logger(), "Create right subscription with topic_name: %s", ai_msg_sub_topic_name_right_.c_str());
+            ai_msg_subscription_right_ = this->create_subscription<ai_msgs::msg::PerceptionTargets>(ai_msg_sub_topic_name_right_, 10, std::bind(&FaceLandmarksDetNode::AiMsgProcess, this, std::placeholders::_1));
+        }
+
         if (is_shared_mem_sub_)
         {
 #ifdef SHARED_MEM_ENABLED
@@ -128,10 +144,21 @@ FaceLandmarksDetNode::FaceLandmarksDetNode(const std::string &node_name, const N
         {
             RCLCPP_WARN(this->get_logger(), "Create subscription with topic_name: %s", ros_img_topic_name_.c_str());
             ros_img_subscription_ = this->create_subscription<sensor_msgs::msg::Image>(ros_img_topic_name_, 10, std::bind(&FaceLandmarksDetNode::RosImgProcess, this, std::placeholders::_1));
+
+            // 双路模式：创建右路图像订阅器
+            if (dual_mode_) {
+                RCLCPP_WARN(this->get_logger(), "Create right subscription with topic_name: %s", ros_img_topic_name_right_.c_str());
+                ros_img_subscription_right_ = this->create_subscription<sensor_msgs::msg::Image>(ros_img_topic_name_right_, 10, std::bind(&FaceLandmarksDetNode::RosImgProcess, this, std::placeholders::_1));
+            }
         }
 
         // Create trigger publisher for body detection
         trigger_pub_ = this->create_publisher<std_msgs::msg::Bool>(trigger_topic_name_, 10);
+
+        // 双路模式：创建右路 trigger 发布器
+        if (dual_mode_) {
+            trigger_pub_right_ = this->create_publisher<std_msgs::msg::Bool>(trigger_topic_name_right_, 10);
+        }
     }
 }
 
@@ -146,6 +173,19 @@ FaceLandmarksDetNode::~FaceLandmarksDetNode()
     {
         predict_task_->join();
         predict_task_.reset();
+    }
+}
+
+// 辅助函数：根据 frame_id 选择正确的发布器
+void FaceLandmarksDetNode::PublishAiMsg(ai_msgs::msg::PerceptionTargets::UniquePtr msg, const std::string& frame_id)
+{
+    if (!msg) return;
+
+    if (dual_mode_ && ai_msg_publisher_right_ &&
+        frame_id.find("right") != std::string::npos) {
+        ai_msg_publisher_right_->publish(std::move(msg));
+    } else if (ai_msg_publisher_) {
+        ai_msg_publisher_->publish(std::move(msg));
     }
 }
 
@@ -265,7 +305,9 @@ int FaceLandmarksDetNode::PostProcess(const std::shared_ptr<DnnNodeOutput> &node
     {
         RCLCPP_ERROR(this->get_logger(), "check face age det outputs fail");
         if (msg) {
-            ai_msg_publisher_->publish(std::move(msg));
+            std::string frame_id = fac_landmarks_det_output->image_msg_header ?
+                fac_landmarks_det_output->image_msg_header->frame_id : "";
+            PublishAiMsg(std::move(msg), frame_id);
         }
         return 0;
     }
@@ -398,7 +440,9 @@ int FaceLandmarksDetNode::PostProcess(const std::shared_ptr<DnnNodeOutput> &node
             }
         }
 
-        ai_msg_publisher_->publish(std::move(ai_msg));
+        std::string frame_id = fac_landmarks_det_output->image_msg_header ?
+            fac_landmarks_det_output->image_msg_header->frame_id : "";
+        PublishAiMsg(std::move(ai_msg), frame_id);
 
         // Timing log
         int count = ++timing_frame_count_;
@@ -506,7 +550,9 @@ int FaceLandmarksDetNode::Predict(std::vector<std::shared_ptr<DNNInput>> &inputs
 {
     RCLCPP_INFO(this->get_logger(), "=> task_num: %d", dnn_node_para_ptr_->task_num);
     RCLCPP_INFO(this->get_logger(), "=> inputs.size(): %ld, rois->size(): %ld", inputs.size(), rois->size());
-    return Run(inputs, dnn_output, rois, is_sync_mode_ == 1 ? true : false);
+    // 双路模式下强制使用同步推理，避免并发访问BPU资源
+    bool sync_mode = (is_sync_mode_ == 1) || (dual_mode_ == 1);
+    return Run(inputs, dnn_output, rois, sync_mode);
 }
 
 // ============================================================ Online Processing ======================================================
@@ -582,7 +628,9 @@ void FaceLandmarksDetNode::RosImgProcess(const sensor_msgs::msg::Image::ConstSha
         // there may be only image messages, no corresponding AI messages
         if (drop_dnn_output->ai_msg)
         {
-            ai_msg_publisher_->publish(std::move(drop_dnn_output->ai_msg));
+            std::string frame_id = drop_dnn_output->image_msg_header ?
+                drop_dnn_output->image_msg_header->frame_id : "";
+            PublishAiMsg(std::move(drop_dnn_output->ai_msg), frame_id);
         }
     }
     CacheImgType cache_img = std::make_pair<std::shared_ptr<FaceLandmarksDetOutput>, std::shared_ptr<NV12PyramidInput>>(std::move(dnn_output), std::move(pyramid));
@@ -778,7 +826,9 @@ void FaceLandmarksDetNode::SharedMemImgProcess(const hbm_img_msgs::msg::HbmMsg10
         // there may be only image messages, no corresponding AI messages
         if (drop_dnn_output->ai_msg)
         {
-            ai_msg_publisher_->publish(std::move(drop_dnn_output->ai_msg));
+            std::string frame_id = drop_dnn_output->image_msg_header ?
+                drop_dnn_output->image_msg_header->frame_id : "";
+            PublishAiMsg(std::move(drop_dnn_output->ai_msg), frame_id);
         }
     }
     CacheImgType cache_img = std::make_pair<std::shared_ptr<FaceLandmarksDetOutput>, std::shared_ptr<NV12PyramidInput>>(std::move(dnn_output), std::move(pyramid));

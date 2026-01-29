@@ -82,62 +82,40 @@ def generate_launch_description():
         }.items()
     )
 
-    # 3. Body detection nodes (left and right)
-    body_detection_left = Node(
+    # 3. Body detection node (dual mode - handles both left and right)
+    body_detection = Node(
         package='mono2d_body_detection',
         executable='mono2d_body_detection',
-        name='body_detection_left',
+        name='body_detection',
         parameters=[{
             'is_shared_mem_sub': 0,
             'model_file_name': body_detection_model,
             'ros_img_topic_name': '/image_left',
             'ai_msg_pub_topic_name': '/body_detection_left',
+            'dual_mode': 1,
+            'ros_img_topic_name_right': '/image_right',
+            'ai_msg_pub_topic_name_right': '/body_detection_right',
             'trigger_interval': LaunchConfiguration('trigger_interval'),
             'track_mode': 0,  # Disable MOT tracking
         }],
         output='screen'
     )
 
-    body_detection_right = Node(
-        package='mono2d_body_detection',
-        executable='mono2d_body_detection',
-        name='body_detection_right',
-        parameters=[{
-            'is_shared_mem_sub': 0,
-            'model_file_name': body_detection_model,
-            'ros_img_topic_name': '/image_right',
-            'ai_msg_pub_topic_name': '/body_detection_right',
-            'trigger_interval': LaunchConfiguration('trigger_interval'),
-            'track_mode': 0,  # Disable MOT tracking
-        }],
-        output='screen'
-    )
-
-    # 4. Face landmarks detection nodes (left and right)
-    face_landmarks_left = Node(
+    # 4. Face landmarks detection node (dual mode - handles both left and right)
+    face_landmarks = Node(
         package='face_landmarks_detection',
         executable='face_landmarks_detection',
-        name='face_landmarks_left',
+        name='face_landmarks',
         parameters=[{
             'is_shared_mem_sub': 0,
             'model_file_name': face_landmarks_model,
             'ros_img_topic_name': '/image_left',
             'ai_msg_sub_topic_name': '/body_detection_left',
             'ai_msg_pub_topic_name': '/face_landmarks_left',
-        }],
-        output='screen'
-    )
-
-    face_landmarks_right = Node(
-        package='face_landmarks_detection',
-        executable='face_landmarks_detection',
-        name='face_landmarks_right',
-        parameters=[{
-            'is_shared_mem_sub': 0,
-            'model_file_name': face_landmarks_model,
-            'ros_img_topic_name': '/image_right',
-            'ai_msg_sub_topic_name': '/body_detection_right',
-            'ai_msg_pub_topic_name': '/face_landmarks_right',
+            'dual_mode': 1,
+            'ros_img_topic_name_right': '/image_right',
+            'ai_msg_sub_topic_name_right': '/body_detection_right',
+            'ai_msg_pub_topic_name_right': '/face_landmarks_right',
         }],
         output='screen'
     )
@@ -161,16 +139,16 @@ def generate_launch_description():
 
     delayed_body_detection = TimerAction(
         period=4.0,
-        actions=[body_detection_left, body_detection_right]
+        actions=[body_detection]
     )
 
     delayed_face_landmarks = TimerAction(
-        period=6.0,
-        actions=[face_landmarks_left, face_landmarks_right]
+        period=8.0,
+        actions=[face_landmarks]
     )
 
     delayed_eye_tracking = TimerAction(
-        period=8.0,
+        period=12.0,
         actions=[eye_tracking_node]
     )
 

@@ -165,8 +165,17 @@ class Mono2dBodyDetNode : public DnnNode {
   // 使用shared mem通信方式订阅图片
   int is_shared_mem_sub_ = 1;
 
+  // 双路模式
+  int dual_mode_ = 0;
+
+  // 左路发布
   std::string ai_msg_pub_topic_name_ = "hobot_mono2d_body_detection";
   rclcpp::Publisher<ai_msgs::msg::PerceptionTargets>::SharedPtr msg_publisher_ =
+      nullptr;
+
+  // 右路发布 (双路模式)
+  std::string ai_msg_pub_topic_name_right_ = "hobot_mono2d_body_detection_right";
+  rclcpp::Publisher<ai_msgs::msg::PerceptionTargets>::SharedPtr msg_publisher_right_ =
       nullptr;
 
   int Predict(std::vector<std::shared_ptr<DNNInput>>& inputs,
@@ -187,6 +196,14 @@ class Mono2dBodyDetNode : public DnnNode {
   // 和sensor_msgs::msg::CompressedImage格式扩展订阅压缩图
   std::string ros_img_topic_name_ = "/image_raw";
   void RosImgProcess(const sensor_msgs::msg::Image::ConstSharedPtr msg);
+
+  // 右路图像订阅 (双路模式)
+  rclcpp::Subscription<sensor_msgs::msg::Image>::ConstSharedPtr
+      ros_img_subscription_right_ = nullptr;
+  std::string ros_img_topic_name_right_ = "/image_right";
+
+  // 双路模式互斥锁，保护推理过程
+  std::mutex dual_mode_mutex_;
 
   // External trigger subscriptions
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr trigger_left_sub_;
