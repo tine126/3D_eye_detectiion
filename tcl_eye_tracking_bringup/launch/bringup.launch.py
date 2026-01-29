@@ -27,9 +27,17 @@ def generate_launch_description():
         name='FASTRTPS_DEFAULT_PROFILES_FILE',
         value=fastdds_config
     )
+    set_fastdds_env2 = SetEnvironmentVariable(
+        name='FASTDDS_DEFAULT_PROFILES_FILE',
+        value=fastdds_config
+    )
     set_rmw_env = SetEnvironmentVariable(
         name='RMW_FASTRTPS_USE_QOS_FROM_XML',
         value='1'
+    )
+    set_rmw_shm_env = SetEnvironmentVariable(
+        name='RMW_FASTRTPS_USE_SHM',
+        value='0'
     )
 
     # ========== 全局参数 ==========
@@ -180,7 +188,9 @@ def generate_launch_description():
     return LaunchDescription([
         # FastDDS 配置 (禁用共享内存)
         set_fastdds_env,
+        set_fastdds_env2,
         set_rmw_env,
+        set_rmw_shm_env,
         # 参数声明
         log_level_arg,
         *camera_args,

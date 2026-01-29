@@ -1,25 +1,44 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <profiles xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
-    <!-- 发布者配置：禁用共享内存 -->
-    <data_writer profile_name="default publisher profile" is_default_profile="true">
-        <qos>
-            <publishMode>
-                <kind>ASYNCHRONOUS</kind>
-            </publishMode>
-            <data_sharing>
-                <kind>OFF</kind>
-            </data_sharing>
-        </qos>
-        <historyMemoryPolicy>PREALLOCATED_WITH_REALLOC</historyMemoryPolicy>
-    </data_writer>
 
-    <!-- 订阅者配置：禁用共享内存 -->
-    <data_reader profile_name="default subscription profile" is_default_profile="true">
-        <qos>
-            <data_sharing>
-                <kind>OFF</kind>
-            </data_sharing>
-        </qos>
-        <historyMemoryPolicy>PREALLOCATED_WITH_REALLOC</historyMemoryPolicy>
-    </data_reader>
+  <!-- 只保留 UDP 传输，彻底禁用 builtin transports（包含 SHM） -->
+  <transport_descriptors>
+    <transport_descriptor>
+      <transport_id>udp_transport</transport_id>
+      <type>UDPv4</type>
+    </transport_descriptor>
+  </transport_descriptors>
+
+  <participant profile_name="ros2_participant" is_default_profile="true">
+    <rtps>
+      <useBuiltinTransports>false</useBuiltinTransports>
+      <userTransports>
+        <transport_id>udp_transport</transport_id>
+      </userTransports>
+    </rtps>
+  </participant>
+
+  <!-- 发布者：禁用 data_sharing -->
+  <data_writer profile_name="default publisher profile" is_default_profile="true">
+    <qos>
+      <publishMode>
+        <kind>ASYNCHRONOUS</kind>
+      </publishMode>
+      <data_sharing>
+        <kind>OFF</kind>
+      </data_sharing>
+    </qos>
+    <historyMemoryPolicy>PREALLOCATED_WITH_REALLOC</historyMemoryPolicy>
+  </data_writer>
+
+  <!-- 订阅者：禁用 data_sharing -->
+  <data_reader profile_name="default subscription profile" is_default_profile="true">
+    <qos>
+      <data_sharing>
+        <kind>OFF</kind>
+      </data_sharing>
+    </qos>
+    <historyMemoryPolicy>PREALLOCATED_WITH_REALLOC</historyMemoryPolicy>
+  </data_reader>
+
 </profiles>
