@@ -8,13 +8,21 @@ from launch_ros.actions import Node
 from launch.substitutions import TextSubstitution
 from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration
+from ament_index_python.packages import get_package_prefix
 
 
 def generate_launch_description():
+    # 获取模型文件绝对路径
+    model_file_path = os.path.join(
+        get_package_prefix("mono2d_body_detection"),
+        "lib", "mono2d_body_detection", "config",
+        "multitask_body_head_face_hand_kps_960x544.hbm"
+    )
+
     # 模型文件参数
     model_file_name_arg = DeclareLaunchArgument(
         "model_file_name",
-        default_value="config/multitask_body_head_face_hand_kps_960x544.hbm"
+        default_value=model_file_path
     )
     # 同步/异步推理模式
     is_sync_mode_arg = DeclareLaunchArgument(
