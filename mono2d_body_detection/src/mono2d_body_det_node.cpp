@@ -559,13 +559,18 @@ int Mono2dBodyDetNode::PostProcess(
 
     auto fasterRcnn_output =
         std::dynamic_pointer_cast<FasterRcnnOutput>(node_output);
+    if (!fasterRcnn_output || !fasterRcnn_output->image_msg_header) {
+      RCLCPP_ERROR(rclcpp::get_logger("mono2d_body_det"),
+                   "Invalid fasterRcnn_output or image_msg_header");
+      continue;
+    }
     {
       std::stringstream ss;
       ss << "Output from";
       ss << ", frame_id: " << fasterRcnn_output->image_msg_header->frame_id
          << ", stamp: " << fasterRcnn_output->image_msg_header->stamp.sec << "_"
          << fasterRcnn_output->image_msg_header->stamp.nanosec
-         << ", infer time ms: " << node_output->rt_stat->infer_time_ms;
+         << ", infer time ms: " << (node_output->rt_stat ? node_output->rt_stat->infer_time_ms : -1);
       RCLCPP_INFO(
           rclcpp::get_logger("mono2d_body_det"), "%s", ss.str().c_str());
     }
@@ -864,7 +869,7 @@ int Mono2dBodyDetNode::PostProcess(
 
     RCLCPP_INFO(rclcpp::get_logger("mono2d_body_det"), "%s", ss.str().c_str());
 
-    if (node_output->rt_stat->fps_updated) {
+    if (node_output->rt_stat && node_output->rt_stat->fps_updated) {
       RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
                   "input fps: %.2f, out fps: %.2f, infer time ms: %d, "
                   "post process time ms: %d",
@@ -892,11 +897,12 @@ int Mono2dBodyDetNode::PostProcess(
       auto now_time = this->now();
       auto msg_time = rclcpp::Time(fasterRcnn_output->image_msg_header->stamp);
       double recv_delay_ms = (now_time - msg_time).seconds() * 1000.0;
+      double infer_ms = node_output->rt_stat ? static_cast<double>(node_output->rt_stat->infer_time_ms) : -1.0;
       RCLCPP_INFO(this->get_logger(),
           "[body_det] %s recv=%.2fms infer=%.2fms total=%.2fms",
           fasterRcnn_output->image_msg_header->frame_id.c_str(),
           recv_delay_ms,
-          static_cast<double>(node_output->rt_stat->infer_time_ms),
+          infer_ms,
           recv_delay_ms);
     }
   }
