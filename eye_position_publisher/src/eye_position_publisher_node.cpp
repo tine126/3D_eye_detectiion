@@ -60,6 +60,17 @@ void EyePositionPublisherNode::ProcessMessage(
 {
     if (!msg || !rclcpp::ok()) return;
 
+    // 记录处理开始时间
+    struct timespec time_start = {0, 0};
+    clock_gettime(CLOCK_REALTIME, &time_start);
+
+    // 计算从消息时间戳到回调入口的传输延迟
+    int64_t msg_ts_ns = static_cast<int64_t>(msg->header.stamp.sec) * 1000000000LL +
+                        static_cast<int64_t>(msg->header.stamp.nanosec);
+    int64_t callback_enter_ns = static_cast<int64_t>(time_start.tv_sec) * 1000000000LL +
+                                static_cast<int64_t>(time_start.tv_nsec);
+    double transport_delay_ms = static_cast<double>(callback_enter_ns - msg_ts_ns) / 1000000.0;
+
     // 创建输出消息
     auto eye_msg = std::make_unique<eye_position_publisher::msg::EyePositions>();
     eye_msg->header = msg->header;
@@ -96,6 +107,13 @@ void EyePositionPublisherNode::ProcessMessage(
             eye_msg->right_eyes.push_back(right_eye);
             eye_msg->valid_flags.push_back(true);
 
+            // 输出每帧二维坐标日志
+            RCLCPP_INFO(this->get_logger(),
+                "[通道%d] 人脸%d: 左眼=(%.2f, %.2f), 右眼=(%.2f, %.2f)",
+                channel_id, face_count,
+                left_eye.x, left_eye.y,
+                right_eye.x, right_eye.y);
+
             face_count++;
         }
     }
@@ -104,6 +122,17 @@ void EyePositionPublisherNode::ProcessMessage(
 
     // 发布消息
     publisher->publish(std::move(eye_msg));
+
+    // 记录处理结束时间
+    struct timespec time_end = {0, 0};
+    clock_gettime(CLOCK_REALTIME, &time_end);
+    double process_ms = (time_end.tv_sec - time_start.tv_sec) * 1000.0 +
+                        (time_end.tv_nsec - time_start.tv_nsec) / 1000000.0;
+
+    // 输出耗时日志
+    RCLCPP_INFO(this->get_logger(),
+        "[通道%d] 帧处理完成: 人脸数=%d, 传输延迟=%.2fms, 处理耗时=%.2fms",
+        channel_id, face_count, transport_delay_ms, process_ms);
 
     // 更新统计
     stat_msg_count_++;

@@ -29,7 +29,7 @@ landmarks_detection:
   model_file_name: "config/faceLandmark106pts.hbm"
 
   # ROI处理参数
-  expand_scale: 1.25
+  expand_scale: 1.1
   roi_size_min: 16
   roi_size_max: 255
 

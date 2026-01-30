@@ -21,7 +21,7 @@ def generate_launch_description():
         {"name": "is_sync_mode", "default": "1", "desc": "0=异步, 1=同步"},
         {"name": "landmarks_model_file_name", "default": landmarks_model_file_name, "desc": "模型路径"},
         {"name": "score_threshold", "default": "0.5", "desc": "人脸检测置信度阈值"},
-        {"name": "expand_scale", "default": "1.25", "desc": "ROI扩展比例"},
+        {"name": "expand_scale", "default": "1.1", "desc": "ROI扩展比例"},
         {"name": "roi_size_min", "default": "16", "desc": "最小ROI尺寸"},
         {"name": "roi_size_max", "default": "255", "desc": "最大ROI尺寸"},
         {"name": "cache_len_limit", "default": "8", "desc": "图像缓存上限"},

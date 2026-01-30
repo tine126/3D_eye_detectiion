@@ -41,7 +41,7 @@ def generate_launch_description():
 
     # ========== face_landmarks专用参数 ==========
     landmarks_params = [
-        {"name": "expand_scale", "default": "1.25", "desc": "ROI expand scale"},
+        {"name": "expand_scale", "default": "1.1", "desc": "ROI expand scale"},
         {"name": "roi_size_min", "default": "16", "desc": "Min ROI size"},
         {"name": "roi_size_max", "default": "255", "desc": "Max ROI size"},
         {"name": "cache_len_limit", "default": "8", "desc": "Image cache limit"},

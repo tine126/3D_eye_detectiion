@@ -123,7 +123,7 @@ int FaceLandmarksDetNode::SetNodePara()
     dnn_node_para_ptr_->model_file = landmarks_model_file_name_;
     dnn_node_para_ptr_->model_name = model_name_;
     dnn_node_para_ptr_->model_task_type = model_task_type_;
-    dnn_node_para_ptr_->task_num = 4;
+    dnn_node_para_ptr_->task_num = 2;  // 降低并发数，减少BPU资源竞争
     return 0;
 }
 
@@ -207,15 +207,28 @@ hbDNNRoi FaceLandmarksDetNode::ComputeRoiFromLandmarks(
     float box_w = max_x - min_x;
     float box_h = max_y - min_y;
 
+    // 强制正方形：取最大边作为边长，避免宽高比过大导致BPU缩放超限
+    float box_size = std::max(box_w, box_h);
+
     // 扩展ROI
-    float w_new = box_w * expand_scale_;
-    float h_new = box_h * expand_scale_;
+    float size_new = box_size * expand_scale_;
+
+    // 限制最大尺寸，防止BPU缩放超限
+    // BPU限制: w_step = roi_width * 65536 / 128 <= 262143
+    // 最大允许: 262143 * 128 / 65536 ≈ 511，取460留余量
+    const float MAX_ROI_SIZE = 460.0f;
+    if (size_new > MAX_ROI_SIZE)
+    {
+        RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
+            "ROI尺寸%.0f超限，限制到%.0f", size_new, MAX_ROI_SIZE);
+        size_new = MAX_ROI_SIZE;
+    }
 
     hbDNNRoi roi;
-    roi.left = static_cast<int32_t>(center_x - w_new / 2);
-    roi.top = static_cast<int32_t>(center_y - h_new / 2);
-    roi.right = static_cast<int32_t>(center_x + w_new / 2);
-    roi.bottom = static_cast<int32_t>(center_y + h_new / 2);
+    roi.left = static_cast<int32_t>(center_x - size_new / 2);
+    roi.top = static_cast<int32_t>(center_y - size_new / 2);
+    roi.right = static_cast<int32_t>(center_x + size_new / 2);
+    roi.bottom = static_cast<int32_t>(center_y + size_new / 2);
 
     // 裁剪到图像边界
     roi.left = std::max(0, roi.left);
@@ -412,16 +425,15 @@ void FaceLandmarksDetNode::ProcessImage(
         "[通道%d] 预处理: 传输=%.2fms, 金字塔=%.2fms, 获取ROI=%.2fms, 构建输入=%.2fms, 总计=%.2fms",
         channel_id, transport_delay_ms, pyramid_ms, roi_ms, input_ms, preprocess_total_ms);
 
+    // 加锁防止双通道并发冲突（扩大范围到整个推理过程）
+    std::lock_guard<std::mutex> lock(bpu_infer_mutex_);
+
     // 记录提交推理时间
     struct timespec time_predict_start = {0, 0};
     clock_gettime(CLOCK_REALTIME, &time_predict_start);
 
-    // 执行推理（加锁防止双通道并发冲突）
-    int predict_ret;
-    {
-        std::lock_guard<std::mutex> lock(bpu_infer_mutex_);
-        predict_ret = Predict(inputs, rois_ptr, dnn_output);
-    }
+    // 执行推理
+    int predict_ret = Predict(inputs, rois_ptr, dnn_output);
 
     struct timespec time_predict_end = {0, 0};
     clock_gettime(CLOCK_REALTIME, &time_predict_end);
@@ -491,6 +503,13 @@ int FaceLandmarksDetNode::PostProcess(const std::shared_ptr<DnnNodeOutput> &node
 
     auto output = std::dynamic_pointer_cast<FaceLandmarksDetOutput>(node_output);
     if (!output) return -1;
+
+    // 检查推理输出是否为空（防止推理失败后继续执行导致崩溃）
+    if (node_output->output_tensors.empty()) {
+        RCLCPP_WARN(this->get_logger(),
+            "[通道%d] 推理输出为空，跳过本帧", output->channel_id);
+        return 0;
+    }
 
     // 记录后处理开始时间
     struct timespec time_post_start = {0, 0};

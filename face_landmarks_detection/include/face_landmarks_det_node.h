@@ -82,7 +82,7 @@ private:
     int is_sync_mode_ = 0;  // 0=异步, 1=同步
 
     // ========== ROI处理配置 ==========
-    float expand_scale_ = 1.25;      // ROI扩展比例
+    float expand_scale_ = 1.1;       // ROI扩展比例
     int32_t roi_size_min_ = 16;      // ROI最小尺寸
     int32_t roi_size_max_ = 255;     // ROI最大尺寸
     int max_lost_frames_ = 3;        // 最大丢失帧数，超过则移除追踪
