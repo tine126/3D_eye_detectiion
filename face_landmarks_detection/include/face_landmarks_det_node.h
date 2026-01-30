@@ -116,6 +116,7 @@ private:
 
     // ========== 内部组件 ==========
     std::shared_ptr<std::thread> predict_task_ = nullptr;
+    std::mutex bpu_infer_mutex_;  // BPU推理互斥锁，防止双通道并发冲突
 
     // ========== 性能统计 ==========
     std::atomic<uint64_t> stat_img_count_{0};      // 接收图像计数

@@ -416,8 +416,12 @@ void FaceLandmarksDetNode::ProcessImage(
     struct timespec time_predict_start = {0, 0};
     clock_gettime(CLOCK_REALTIME, &time_predict_start);
 
-    // 执行推理
-    int predict_ret = Predict(inputs, rois_ptr, dnn_output);
+    // 执行推理（加锁防止双通道并发冲突）
+    int predict_ret;
+    {
+        std::lock_guard<std::mutex> lock(bpu_infer_mutex_);
+        predict_ret = Predict(inputs, rois_ptr, dnn_output);
+    }
 
     struct timespec time_predict_end = {0, 0};
     clock_gettime(CLOCK_REALTIME, &time_predict_end);
