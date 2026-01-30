@@ -111,11 +111,11 @@ class Mono2dBodyDetNode : public DnnNode {
       right_img_subscription_ = nullptr;
 
   // ========== 发布配置 (双路输出) ==========
-  // 左IR
-  std::string left_pub_topic_ = "/hobot_mono2d_body_detection_left";
+  // 左IR (参数名加 mono2d_ 前缀避免与其他节点冲突)
+  std::string mono2d_left_pub_topic_ = "/hobot_mono2d_body_detection_left";
   rclcpp::Publisher<ai_msgs::msg::PerceptionTargets>::SharedPtr left_publisher_ = nullptr;
   // 右IR
-  std::string right_pub_topic_ = "/hobot_mono2d_body_detection_right";
+  std::string mono2d_right_pub_topic_ = "/hobot_mono2d_body_detection_right";
   rclcpp::Publisher<ai_msgs::msg::PerceptionTargets>::SharedPtr right_publisher_ = nullptr;
 
   // ========== 内部组件 ==========

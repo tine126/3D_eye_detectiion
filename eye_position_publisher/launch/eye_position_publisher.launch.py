@@ -11,11 +11,11 @@ def generate_launch_description():
     # 参数定义
     params = [
         # 左IR
-        {"name": "left_sub_topic", "default": "/face_landmarks_detection_left", "desc": "左IR关键点输入"},
-        {"name": "left_pub_topic", "default": "/eye_positions_left", "desc": "左IR眼睛位置输出"},
+        {"name": "eye_left_sub_topic", "default": "/face_landmarks_detection_left", "desc": "左IR关键点输入"},
+        {"name": "eye_left_pub_topic", "default": "/eye_positions_left", "desc": "左IR眼睛位置输出"},
         # 右IR
-        {"name": "right_sub_topic", "default": "/face_landmarks_detection_right", "desc": "右IR关键点输入"},
-        {"name": "right_pub_topic", "default": "/eye_positions_right", "desc": "右IR眼睛位置输出"},
+        {"name": "eye_right_sub_topic", "default": "/face_landmarks_detection_right", "desc": "右IR关键点输入"},
+        {"name": "eye_right_pub_topic", "default": "/eye_positions_right", "desc": "右IR眼睛位置输出"},
         # 日志
         {"name": "log_level", "default": "warn", "desc": "日志级别"},
     ]

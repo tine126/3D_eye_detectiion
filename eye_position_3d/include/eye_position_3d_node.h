@@ -70,12 +70,12 @@ private:
     double max_y_diff_ = 10.0;        // 最大Y坐标差异(像素)
 
     // ========== 手动相机参数配置 ==========
-    bool use_manual_camera_params_ = false;  // 是否使用手动配置
-    double manual_fx_ = 0.0;          // 手动焦距x
-    double manual_fy_ = 0.0;          // 手动焦距y
-    double manual_cx_ = 0.0;          // 手动主点x
-    double manual_cy_ = 0.0;          // 手动主点y
-    double manual_baseline_mm_ = 0.0; // 手动基线距离(mm)
+    bool use_manual_camera_params_ = true;  // 是否使用手动配置
+    double manual_fx_ = 619.688049;   // 手动焦距x
+    double manual_fy_ = 619.688049;   // 手动焦距y
+    double manual_cx_ = 638.0;        // 手动主点x
+    double manual_cy_ = 396.0;        // 手动主点y
+    double manual_baseline_mm_ = 95.0; // 手动基线距离(mm)
 
     // ========== 相机参数 ==========
     CameraParams left_camera_params_;

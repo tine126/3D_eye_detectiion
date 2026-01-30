@@ -10,7 +10,7 @@ from launch_ros.actions import Node
 
 
 def generate_launch_description():
-    model_file_name = os.path.join(
+    landmarks_model_file_name = os.path.join(
         get_package_share_directory("face_landmarks_detection"),
         "config",
         "faceLandmark106pts.hbm",
@@ -19,7 +19,7 @@ def generate_launch_description():
     # 参数定义
     params = [
         {"name": "is_sync_mode", "default": "0", "desc": "0=异步, 1=同步"},
-        {"name": "model_file_name", "default": model_file_name, "desc": "模型路径"},
+        {"name": "landmarks_model_file_name", "default": landmarks_model_file_name, "desc": "模型路径"},
         {"name": "score_threshold", "default": "0.5", "desc": "人脸检测置信度阈值"},
         {"name": "expand_scale", "default": "1.25", "desc": "ROI扩展比例"},
         {"name": "roi_size_min", "default": "16", "desc": "最小ROI尺寸"},

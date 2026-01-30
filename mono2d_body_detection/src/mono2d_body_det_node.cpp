@@ -112,18 +112,18 @@ Mono2dBodyDetNode::Mono2dBodyDetNode(const NodeOptions& options)
   this->declare_parameter<int>("is_sync_mode", is_sync_mode_);
   this->declare_parameter<std::string>("model_file_name", model_file_name_);
   this->declare_parameter<std::string>("left_img_topic", left_img_topic_);
-  this->declare_parameter<std::string>("left_pub_topic", left_pub_topic_);
+  this->declare_parameter<std::string>("mono2d_left_pub_topic", mono2d_left_pub_topic_);
   this->declare_parameter<std::string>("right_img_topic", right_img_topic_);
-  this->declare_parameter<std::string>("right_pub_topic", right_pub_topic_);
+  this->declare_parameter<std::string>("mono2d_right_pub_topic", mono2d_right_pub_topic_);
   this->declare_parameter<double>("score_threshold", score_threshold_);
 
   // 获取参数
   this->get_parameter<int>("is_sync_mode", is_sync_mode_);
   this->get_parameter<std::string>("model_file_name", model_file_name_);
   this->get_parameter<std::string>("left_img_topic", left_img_topic_);
-  this->get_parameter<std::string>("left_pub_topic", left_pub_topic_);
+  this->get_parameter<std::string>("mono2d_left_pub_topic", mono2d_left_pub_topic_);
   this->get_parameter<std::string>("right_img_topic", right_img_topic_);
-  this->get_parameter<std::string>("right_pub_topic", right_pub_topic_);
+  this->get_parameter<std::string>("mono2d_right_pub_topic", mono2d_right_pub_topic_);
   this->get_parameter<float>("score_threshold", score_threshold_);
 
   // 打印关键配置
@@ -138,8 +138,8 @@ Mono2dBodyDetNode::Mono2dBodyDetNode(const NodeOptions& options)
     model_file_name_.c_str(),
     is_sync_mode_, is_sync_mode_ == 0 ? "异步" : "同步",
     score_threshold_,
-    left_img_topic_.c_str(), left_pub_topic_.c_str(),
-    right_img_topic_.c_str(), right_pub_topic_.c_str());
+    left_img_topic_.c_str(), mono2d_left_pub_topic_.c_str(),
+    right_img_topic_.c_str(), mono2d_right_pub_topic_.c_str());
 
   // 初始化模型
   if (Init() != 0) {
@@ -165,9 +165,9 @@ Mono2dBodyDetNode::Mono2dBodyDetNode(const NodeOptions& options)
 
   // 创建双路发布者
   left_publisher_ = this->create_publisher<ai_msgs::msg::PerceptionTargets>(
-      left_pub_topic_, 10);
+      mono2d_left_pub_topic_, 10);
   right_publisher_ = this->create_publisher<ai_msgs::msg::PerceptionTargets>(
-      right_pub_topic_, 10);
+      mono2d_right_pub_topic_, 10);
 
   // 获取模型输入尺寸
   if (GetModelInputSize(0, model_input_width_, model_input_height_) < 0) {

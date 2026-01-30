@@ -9,32 +9,32 @@ EyePositionPublisherNode::EyePositionPublisherNode(
     : Node(node_name, options)
 {
     // 声明并获取参数
-    this->declare_parameter("left_sub_topic", left_sub_topic_);
-    this->declare_parameter("left_pub_topic", left_pub_topic_);
-    this->declare_parameter("right_sub_topic", right_sub_topic_);
-    this->declare_parameter("right_pub_topic", right_pub_topic_);
+    this->declare_parameter("eye_left_sub_topic", eye_left_sub_topic_);
+    this->declare_parameter("eye_left_pub_topic", eye_left_pub_topic_);
+    this->declare_parameter("eye_right_sub_topic", eye_right_sub_topic_);
+    this->declare_parameter("eye_right_pub_topic", eye_right_pub_topic_);
 
-    this->get_parameter("left_sub_topic", left_sub_topic_);
-    this->get_parameter("left_pub_topic", left_pub_topic_);
-    this->get_parameter("right_sub_topic", right_sub_topic_);
-    this->get_parameter("right_pub_topic", right_pub_topic_);
+    this->get_parameter("eye_left_sub_topic", eye_left_sub_topic_);
+    this->get_parameter("eye_left_pub_topic", eye_left_pub_topic_);
+    this->get_parameter("eye_right_sub_topic", eye_right_sub_topic_);
+    this->get_parameter("eye_right_pub_topic", eye_right_pub_topic_);
 
     RCLCPP_INFO(this->get_logger(), "参数配置:");
-    RCLCPP_INFO(this->get_logger(), "  左IR: %s -> %s", left_sub_topic_.c_str(), left_pub_topic_.c_str());
-    RCLCPP_INFO(this->get_logger(), "  右IR: %s -> %s", right_sub_topic_.c_str(), right_pub_topic_.c_str());
+    RCLCPP_INFO(this->get_logger(), "  左IR: %s -> %s", eye_left_sub_topic_.c_str(), eye_left_pub_topic_.c_str());
+    RCLCPP_INFO(this->get_logger(), "  右IR: %s -> %s", eye_right_sub_topic_.c_str(), eye_right_pub_topic_.c_str());
 
     // 创建左IR发布者和订阅者
     left_publisher_ = this->create_publisher<eye_position_publisher::msg::EyePositions>(
-        left_pub_topic_, rclcpp::SensorDataQoS());
+        eye_left_pub_topic_, rclcpp::SensorDataQoS());
     left_subscription_ = this->create_subscription<ai_msgs::msg::PerceptionTargets>(
-        left_sub_topic_, rclcpp::SensorDataQoS(),
+        eye_left_sub_topic_, rclcpp::SensorDataQoS(),
         std::bind(&EyePositionPublisherNode::LeftCallback, this, std::placeholders::_1));
 
     // 创建右IR发布者和订阅者
     right_publisher_ = this->create_publisher<eye_position_publisher::msg::EyePositions>(
-        right_pub_topic_, rclcpp::SensorDataQoS());
+        eye_right_pub_topic_, rclcpp::SensorDataQoS());
     right_subscription_ = this->create_subscription<ai_msgs::msg::PerceptionTargets>(
-        right_sub_topic_, rclcpp::SensorDataQoS(),
+        eye_right_sub_topic_, rclcpp::SensorDataQoS(),
         std::bind(&EyePositionPublisherNode::RightCallback, this, std::placeholders::_1));
 
     // 初始化统计

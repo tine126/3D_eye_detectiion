@@ -53,7 +53,7 @@ protected:
 
 private:
     // ========== 模型配置 ==========
-    std::string model_file_name_ = "./config/faceLandmark106pts.hbm";
+    std::string landmarks_model_file_name_ = "./config/faceLandmark106pts.hbm";
     std::string model_name_ = "faceLandmark106pts";
     int model_input_width_ = -1;
     int model_input_height_ = -1;
