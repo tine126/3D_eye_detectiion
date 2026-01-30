@@ -175,6 +175,8 @@ void EyePosition3DNode::SyncCallback(
     const EyePositionsMsg::ConstSharedPtr left_msg,
     const EyePositionsMsg::ConstSharedPtr right_msg)
 {
+    auto process_start = std::chrono::steady_clock::now();
+
     std::lock_guard<std::mutex> lock(callback_mutex_);
     if (!is_active_.load()) {
         return;
@@ -254,6 +256,37 @@ void EyePosition3DNode::SyncCallback(
 
     // 发布消息
     publisher_->publish(output_msg);
+
+    // 帧序号递增
+    uint64_t frame_id = ++frame_counter_;
+
+    // 计算处理耗时
+    auto process_end = std::chrono::steady_clock::now();
+    double process_ms = std::chrono::duration<double, std::milli>(
+        process_end - process_start).count();
+
+    // 计算端到端传输延迟（从消息时间戳到当前时间）
+    auto now = this->get_clock()->now();
+    double transfer_ms = (now - rclcpp::Time(left_msg->header.stamp)).seconds() * 1000.0;
+
+    // 输出每帧三维坐标日志
+    for (size_t i = 0; i < output_msg.track_ids.size(); ++i) {
+        const auto& left_3d = output_msg.left_eyes_3d[i];
+        const auto& right_3d = output_msg.right_eyes_3d[i];
+        bool valid = output_msg.valid_flags[i];
+
+        RCLCPP_INFO(this->get_logger(),
+            "[帧#%lu] 人脸%lu: 左眼3D=(%.1f,%.1f,%.1f) 右眼3D=(%.1f,%.1f,%.1f) [%s]",
+            frame_id,
+            output_msg.track_ids[i],
+            left_3d.x, left_3d.y, left_3d.z,
+            right_3d.x, right_3d.y, right_3d.z,
+            valid ? "有效" : "无效");
+    }
+
+    RCLCPP_INFO(this->get_logger(),
+        "[帧#%lu] 端到端耗时: 传输=%.1fms, 3D计算=%.2fms, 总计=%.1fms, 人脸数=%d",
+        frame_id, transfer_ms, process_ms, transfer_ms + process_ms, output_msg.face_count);
 
     // 更新统计
     stat_msg_count_++;

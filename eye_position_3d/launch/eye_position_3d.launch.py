@@ -22,8 +22,8 @@ def generate_launch_description():
         {"name": "min_disparity", "default": "5.0", "desc": "最小视差(像素)"},
         {"name": "max_disparity", "default": "200.0", "desc": "最大视差(像素)"},
         {"name": "min_depth_mm", "default": "200.0", "desc": "最小深度(mm)"},
-        {"name": "max_depth_mm", "default": "2000.0", "desc": "最大深度(mm)"},
-        {"name": "max_y_diff", "default": "10.0", "desc": "最大Y坐标差异(像素)"},
+        {"name": "max_depth_mm", "default": "5000.0", "desc": "最大深度(mm)"},
+        {"name": "max_y_diff", "default": "50.0", "desc": "最大Y坐标差异(像素)"},
         # 手动相机参数配置
         {"name": "use_manual_camera_params", "default": "true", "desc": "是否使用手动配置"},
         {"name": "manual_fx", "default": "619.688049", "desc": "手动焦距x"},

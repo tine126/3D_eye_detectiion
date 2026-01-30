@@ -66,8 +66,8 @@ private:
     double min_disparity_ = 5.0;      // 最小视差(像素)
     double max_disparity_ = 200.0;    // 最大视差(像素)
     double min_depth_mm_ = 200.0;     // 最小深度(mm)
-    double max_depth_mm_ = 2000.0;    // 最大深度(mm)
-    double max_y_diff_ = 10.0;        // 最大Y坐标差异(像素)
+    double max_depth_mm_ = 5000.0;    // 最大深度(mm)
+    double max_y_diff_ = 50.0;        // 最大Y坐标差异(像素)
 
     // ========== 手动相机参数配置 ==========
     bool use_manual_camera_params_ = true;  // 是否使用手动配置
@@ -96,6 +96,7 @@ private:
     std::atomic<uint64_t> stat_msg_count_{0};
     std::atomic<uint64_t> stat_face_count_{0};
     std::atomic<uint64_t> stat_valid_count_{0};
+    std::atomic<uint64_t> frame_counter_{0};  // 帧序号计数器
     std::chrono::steady_clock::time_point stat_start_time_;
     static constexpr int STAT_INTERVAL_SEC = 5;
 
