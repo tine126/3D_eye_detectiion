@@ -68,10 +68,10 @@ def generate_launch_description():
                               description='人脸检测置信度阈值'),
         # 3D计算参数
         DeclareLaunchArgument('use_manual_camera_params', default_value='true'),
-        DeclareLaunchArgument('manual_fx', default_value='455.0'),
-        DeclareLaunchArgument('manual_fy', default_value='455.0'),
-        DeclareLaunchArgument('manual_cx', default_value='640.0'),
-        DeclareLaunchArgument('manual_cy', default_value='400.0'),
+        DeclareLaunchArgument('manual_fx', default_value='619.688049'),
+        DeclareLaunchArgument('manual_fy', default_value='619.688049'),
+        DeclareLaunchArgument('manual_cx', default_value='638.0'),
+        DeclareLaunchArgument('manual_cy', default_value='396.0'),
         DeclareLaunchArgument('manual_baseline_mm', default_value='95.0'),
     ]
 

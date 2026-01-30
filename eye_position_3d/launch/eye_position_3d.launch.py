@@ -25,12 +25,12 @@ def generate_launch_description():
         {"name": "max_depth_mm", "default": "2000.0", "desc": "最大深度(mm)"},
         {"name": "max_y_diff", "default": "10.0", "desc": "最大Y坐标差异(像素)"},
         # 手动相机参数配置
-        {"name": "use_manual_camera_params", "default": "false", "desc": "是否使用手动配置"},
-        {"name": "manual_fx", "default": "0.0", "desc": "手动焦距x"},
-        {"name": "manual_fy", "default": "0.0", "desc": "手动焦距y"},
-        {"name": "manual_cx", "default": "0.0", "desc": "手动主点x"},
-        {"name": "manual_cy", "default": "0.0", "desc": "手动主点y"},
-        {"name": "manual_baseline_mm", "default": "0.0", "desc": "手动基线距离(mm)"},
+        {"name": "use_manual_camera_params", "default": "true", "desc": "是否使用手动配置"},
+        {"name": "manual_fx", "default": "619.688049", "desc": "手动焦距x"},
+        {"name": "manual_fy", "default": "619.688049", "desc": "手动焦距y"},
+        {"name": "manual_cx", "default": "638.0", "desc": "手动主点x"},
+        {"name": "manual_cy", "default": "396.0", "desc": "手动主点y"},
+        {"name": "manual_baseline_mm", "default": "95.0", "desc": "手动基线距离(mm)"},
         # 日志
         {"name": "log_level", "default": "warn", "desc": "日志级别"},
     ]
