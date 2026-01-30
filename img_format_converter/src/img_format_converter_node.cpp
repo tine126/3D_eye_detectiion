@@ -66,6 +66,12 @@ void ImgFormatConverterNode::ProcessImage(
 {
     if (!msg || !rclcpp::ok()) return;
 
+    // 记录回调进入时间
+    auto callback_enter_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    auto img_ts_ns = static_cast<int64_t>(msg->header.stamp.sec) * 1000000000LL +
+                     static_cast<int64_t>(msg->header.stamp.nanosec);
+
     auto start_time = std::chrono::steady_clock::now();
 
     // 检查输入格式
@@ -105,25 +111,33 @@ void ImgFormatConverterNode::ProcessImage(
     // 设置数据大小 (NV12 = width * height * 1.5)
     hbmem_msg->data_size = msg->width * msg->height * 3 / 2;
 
+    // 记录转换完成时间
+    auto convert_end_time = std::chrono::steady_clock::now();
+
     // 发布消息
     publisher->publish(std::move(hbmem_msg));
 
-    // 计算转换耗时
-    auto end_time = std::chrono::steady_clock::now();
-    auto convert_us = std::chrono::duration_cast<std::chrono::microseconds>(
-        end_time - start_time).count();
-
-    // 计算端到端延迟 (图像时间戳 -> 发布完成)
-    auto now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+    // 记录发布完成时间
+    auto publish_end_time = std::chrono::steady_clock::now();
+    auto publish_end_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
-    auto img_ns = static_cast<int64_t>(msg->header.stamp.sec) * 1000000000LL +
-                  static_cast<int64_t>(msg->header.stamp.nanosec);
-    auto e2e_us = (now_ns - img_ns) / 1000;
+
+    // 计算各阶段耗时
+    auto convert_us = std::chrono::duration_cast<std::chrono::microseconds>(
+        convert_end_time - start_time).count();
+    auto publish_us = std::chrono::duration_cast<std::chrono::microseconds>(
+        publish_end_time - convert_end_time).count();
+
+    // 计算延迟分解 (微秒)
+    int64_t transport_delay_us = (callback_enter_ns - img_ts_ns) / 1000;  // 传输延迟
+    int64_t total_e2e_us = (publish_end_ns - img_ts_ns) / 1000;           // 总端到端延迟
 
     // 更新统计
     stat_frame_count_++;
     stat_total_convert_us_ += convert_us;
-    stat_total_e2e_us_ += e2e_us;
+    stat_total_e2e_us_ += total_e2e_us;
+    stat_total_transport_us_ += transport_delay_us;
+    stat_total_publish_us_ += publish_us;
 
     // 更新最大/最小转换耗时
     uint64_t cur_max = stat_max_convert_us_.load();
@@ -135,11 +149,11 @@ void ImgFormatConverterNode::ProcessImage(
 
     // 更新最大/最小端到端延迟
     int64_t cur_max_e2e = stat_max_e2e_us_.load();
-    while (e2e_us > cur_max_e2e &&
-           !stat_max_e2e_us_.compare_exchange_weak(cur_max_e2e, e2e_us)) {}
+    while (total_e2e_us > cur_max_e2e &&
+           !stat_max_e2e_us_.compare_exchange_weak(cur_max_e2e, total_e2e_us)) {}
     int64_t cur_min_e2e = stat_min_e2e_us_.load();
-    while (e2e_us < cur_min_e2e &&
-           !stat_min_e2e_us_.compare_exchange_weak(cur_min_e2e, e2e_us)) {}
+    while (total_e2e_us < cur_min_e2e &&
+           !stat_min_e2e_us_.compare_exchange_weak(cur_min_e2e, total_e2e_us)) {}
 
     // 定期打印统计
     PrintStatistics();
@@ -194,11 +208,16 @@ void ImgFormatConverterNode::PrintStatistics()
         RCLCPP_INFO(this->get_logger(),
             "统计 [%ld秒]: 帧数=%lu, 帧率=%.1f",
             elapsed, frame_count, fps);
+
+        // 延迟分解
+        double avg_transport_ms = static_cast<double>(stat_total_transport_us_.load()) / frame_count / 1000.0;
+        double avg_publish_ms = static_cast<double>(stat_total_publish_us_.load()) / frame_count / 1000.0;
+
         RCLCPP_INFO(this->get_logger(),
-            "  转换耗时: 平均=%.2fms, 最小=%.2fms, 最大=%.2fms",
-            avg_convert_ms, min_convert_ms, max_convert_ms);
+            "  延迟分解: 传输=%.2fms, 转换=%.2fms, 发布=%.2fms, 总计=%.2fms",
+            avg_transport_ms, avg_convert_ms, avg_publish_ms, avg_e2e_ms);
         RCLCPP_INFO(this->get_logger(),
-            "  端到端延迟: 平均=%.2fms, 最小=%.2fms, 最大=%.2fms",
+            "  端到端: 平均=%.2fms, 最小=%.2fms, 最大=%.2fms",
             avg_e2e_ms, min_e2e_ms, max_e2e_ms);
 
         // 重置统计
@@ -209,6 +228,8 @@ void ImgFormatConverterNode::PrintStatistics()
         stat_total_e2e_us_ = 0;
         stat_max_e2e_us_ = 0;
         stat_min_e2e_us_ = INT64_MAX;
+        stat_total_transport_us_ = 0;
+        stat_total_publish_us_ = 0;
         stat_start_time_ = now;
     }
 }

@@ -54,6 +54,12 @@ private:
     std::atomic<int64_t> stat_max_e2e_us_{0};
     std::atomic<int64_t> stat_min_e2e_us_{INT64_MAX};
 
+    // 传输延迟统计 (图像时间戳 -> 回调进入)
+    std::atomic<int64_t> stat_total_transport_us_{0};
+
+    // 发布耗时统计
+    std::atomic<int64_t> stat_total_publish_us_{0};
+
     // ========== 私有方法 ==========
     void LeftImageCallback(const sensor_msgs::msg::Image::ConstSharedPtr msg);
     void RightImageCallback(const sensor_msgs::msg::Image::ConstSharedPtr msg);
