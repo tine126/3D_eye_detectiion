@@ -1,5 +1,5 @@
 // Copyright (c) 2024，D-Robotics.
-// 精简版：仅保留在线模式，SharedMem+NV12输入
+// 自适应ROI版：移除人脸检测依赖，使用自适应ROI追踪
 
 #ifndef FACE_LANDMARKS_DET_NODE_H
 #define FACE_LANDMARKS_DET_NODE_H
@@ -9,6 +9,7 @@
 #include <mutex>
 #include <condition_variable>
 #include <thread>
+#include <vector>
 
 #include "rclcpp/rclcpp.hpp"
 #include "dnn_node/dnn_node.h"
@@ -16,7 +17,6 @@
 #include "ai_msgs/msg/perception_targets.hpp"
 #include "hbm_img_msgs/msg/hbm_msg1080_p.hpp"
 #include "face_landmarks_det_output_parser.h"
-#include "ai_msg_manage.h"
 
 using rclcpp::NodeOptions;
 using hobot::dnn_node::DNNInput;
@@ -26,6 +26,25 @@ using hobot::dnn_node::DNNTensor;
 using hobot::dnn_node::ModelTaskType;
 using hobot::dnn_node::NV12PyramidInput;
 using ai_msgs::msg::PerceptionTargets;
+
+// 自适应ROI结构体
+struct AdaptiveRoi {
+    hbDNNRoi roi;           // ROI区域
+    uint64_t track_id;      // 追踪ID
+    int lost_count;         // 连续丢失帧数
+
+    AdaptiveRoi() : track_id(0), lost_count(0) {
+        roi.left = roi.top = roi.right = roi.bottom = 0;
+    }
+
+    AdaptiveRoi(int left, int top, int right, int bottom, uint64_t id = 0)
+        : track_id(id), lost_count(0) {
+        roi.left = left;
+        roi.top = top;
+        roi.right = right;
+        roi.bottom = bottom;
+    }
+};
 
 // 推理输出结构
 struct FaceLandmarksDetOutput : public DnnNodeOutput
@@ -66,70 +85,60 @@ private:
     float expand_scale_ = 1.25;      // ROI扩展比例
     int32_t roi_size_min_ = 16;      // ROI最小尺寸
     int32_t roi_size_max_ = 255;     // ROI最大尺寸
-    float score_threshold_ = 0.5;    // 上游人脸检测置信度阈值(用于日志/校验)
+    int max_lost_frames_ = 3;        // 最大丢失帧数，超过则移除追踪
 
-    // ========== 缓存配置 ==========
-    size_t cache_len_limit_ = 8;     // 图像缓存上限
-    int ai_msg_timeout_ms_ = 200;    // AI消息匹配超时(ms)
+    // ========== 图像尺寸配置 ==========
+    int image_width_ = 1280;
+    int image_height_ = 800;
 
     // ========== 话题配置 (双路) ==========
     // 左IR
     std::string left_img_topic_ = "/hbmem_img_left";
-    std::string left_ai_sub_topic_ = "/hobot_mono2d_body_detection_left";
     std::string left_ai_pub_topic_ = "/face_landmarks_detection_left";
     // 右IR
     std::string right_img_topic_ = "/hbmem_img_right";
-    std::string right_ai_sub_topic_ = "/hobot_mono2d_body_detection_right";
     std::string right_ai_pub_topic_ = "/face_landmarks_detection_right";
 
     // ========== 订阅/发布 (双路) ==========
     // 左IR
     rclcpp::Subscription<hbm_img_msgs::msg::HbmMsg1080P>::ConstSharedPtr left_img_sub_ = nullptr;
-    rclcpp::Subscription<ai_msgs::msg::PerceptionTargets>::SharedPtr left_ai_sub_ = nullptr;
     rclcpp::Publisher<ai_msgs::msg::PerceptionTargets>::SharedPtr left_ai_pub_ = nullptr;
     // 右IR
     rclcpp::Subscription<hbm_img_msgs::msg::HbmMsg1080P>::ConstSharedPtr right_img_sub_ = nullptr;
-    rclcpp::Subscription<ai_msgs::msg::PerceptionTargets>::SharedPtr right_ai_sub_ = nullptr;
     rclcpp::Publisher<ai_msgs::msg::PerceptionTargets>::SharedPtr right_ai_pub_ = nullptr;
 
-    // ========== 内部组件 (双路) ==========
-    std::shared_ptr<AiMsgManage> left_ai_manage_ = nullptr;
-    std::shared_ptr<AiMsgManage> right_ai_manage_ = nullptr;
-    std::shared_ptr<std::thread> predict_task_ = nullptr;
+    // ========== 自适应ROI管理 (双路) ==========
+    std::vector<AdaptiveRoi> left_rois_;      // 左IR当前ROI列表
+    std::vector<AdaptiveRoi> right_rois_;     // 右IR当前ROI列表
+    std::mutex left_roi_mtx_;                 // 左IR ROI锁
+    std::mutex right_roi_mtx_;                // 右IR ROI锁
+    std::atomic<uint64_t> next_track_id_{1};  // 下一个追踪ID
 
-    // ========== 图像缓存 (双路) ==========
-    using CacheImgType = std::pair<std::shared_ptr<FaceLandmarksDetOutput>, std::shared_ptr<NV12PyramidInput>>;
-    // 左IR缓存
-    std::queue<CacheImgType> left_cache_img_;
-    std::mutex left_mtx_img_;
-    std::condition_variable left_cv_img_;
-    // 右IR缓存
-    std::queue<CacheImgType> right_cache_img_;
-    std::mutex right_mtx_img_;
-    std::condition_variable right_cv_img_;
+    // ========== 内部组件 ==========
+    std::shared_ptr<std::thread> predict_task_ = nullptr;
 
     // ========== 性能统计 ==========
     std::atomic<uint64_t> stat_img_count_{0};      // 接收图像计数
-    std::atomic<uint64_t> stat_match_count_{0};    // 匹配成功计数
     std::atomic<uint64_t> stat_infer_count_{0};    // 推理成功计数
-    std::atomic<uint64_t> stat_drop_count_{0};     // 丢帧计数
-    std::atomic<uint64_t> stat_filter_count_{0};   // ROI过滤计数
+    std::atomic<uint64_t> stat_detect_count_{0};   // 检测到人脸计数
 
     // ========== 私有方法 ==========
     // 双路回调
     void LeftImgCallback(const hbm_img_msgs::msg::HbmMsg1080P::ConstSharedPtr msg);
     void RightImgCallback(const hbm_img_msgs::msg::HbmMsg1080P::ConstSharedPtr msg);
-    void LeftAiCallback(const ai_msgs::msg::PerceptionTargets::ConstSharedPtr msg);
-    void RightAiCallback(const ai_msgs::msg::PerceptionTargets::ConstSharedPtr msg);
     // 通用处理
     void ProcessImage(const hbm_img_msgs::msg::HbmMsg1080P::ConstSharedPtr msg,
-                      std::shared_ptr<AiMsgManage> ai_manage,
+                      std::vector<AdaptiveRoi>& rois,
+                      std::mutex& roi_mtx,
                       rclcpp::Publisher<ai_msgs::msg::PerceptionTargets>::SharedPtr publisher,
-                      std::queue<CacheImgType>& cache_img,
-                      std::mutex& mtx_img,
-                      std::condition_variable& cv_img,
                       int channel_id);
-    void RunPredict();
+    // ROI管理
+    std::vector<hbDNNRoi> GetCurrentROIs(std::vector<AdaptiveRoi>& rois, std::mutex& roi_mtx);
+    hbDNNRoi GetDefaultROI();
+    hbDNNRoi ComputeRoiFromLandmarks(const std::vector<geometry_msgs::msg::Point32>& landmarks);
+    void UpdateROIs(std::vector<AdaptiveRoi>& rois, std::mutex& roi_mtx,
+                    const ai_msgs::msg::PerceptionTargets& results);
+    // 推理
     int Predict(std::vector<std::shared_ptr<DNNInput>> &inputs,
                 const std::shared_ptr<std::vector<hbDNNRoi>> rois,
                 std::shared_ptr<DnnNodeOutput> dnn_output);

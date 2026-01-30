@@ -1,7 +1,8 @@
 // Copyright (c) 2024，D-Robotics.
-// 精简版：仅保留在线模式，SharedMem+NV12输入
+// 自适应ROI版：移除人脸检测依赖，使用自适应ROI追踪
 
 #include "face_landmarks_det_node.h"
+#include <algorithm>
 
 // ==================== 工具函数 ====================
 
@@ -26,57 +27,50 @@ FaceLandmarksDetNode::FaceLandmarksDetNode(const std::string &node_name, const N
     // 声明并获取参数
     this->declare_parameter<int>("is_sync_mode", is_sync_mode_);
     this->declare_parameter<std::string>("landmarks_model_file_name", landmarks_model_file_name_);
-    // 双路topic参数
     this->declare_parameter<std::string>("left_img_topic", left_img_topic_);
-    this->declare_parameter<std::string>("left_ai_sub_topic", left_ai_sub_topic_);
     this->declare_parameter<std::string>("left_ai_pub_topic", left_ai_pub_topic_);
     this->declare_parameter<std::string>("right_img_topic", right_img_topic_);
-    this->declare_parameter<std::string>("right_ai_sub_topic", right_ai_sub_topic_);
     this->declare_parameter<std::string>("right_ai_pub_topic", right_ai_pub_topic_);
     this->declare_parameter<double>("expand_scale", expand_scale_);
     this->declare_parameter<int>("roi_size_min", roi_size_min_);
     this->declare_parameter<int>("roi_size_max", roi_size_max_);
-    this->declare_parameter<int>("cache_len_limit", static_cast<int>(cache_len_limit_));
-    this->declare_parameter<int>("ai_msg_timeout_ms", ai_msg_timeout_ms_);
-    this->declare_parameter<double>("score_threshold", score_threshold_);
+    this->declare_parameter<int>("image_width", image_width_);
+    this->declare_parameter<int>("image_height", image_height_);
+    this->declare_parameter<int>("max_lost_frames", max_lost_frames_);
 
     this->get_parameter<int>("is_sync_mode", is_sync_mode_);
     this->get_parameter<std::string>("landmarks_model_file_name", landmarks_model_file_name_);
     this->get_parameter<std::string>("left_img_topic", left_img_topic_);
-    this->get_parameter<std::string>("left_ai_sub_topic", left_ai_sub_topic_);
     this->get_parameter<std::string>("left_ai_pub_topic", left_ai_pub_topic_);
     this->get_parameter<std::string>("right_img_topic", right_img_topic_);
-    this->get_parameter<std::string>("right_ai_sub_topic", right_ai_sub_topic_);
     this->get_parameter<std::string>("right_ai_pub_topic", right_ai_pub_topic_);
     this->get_parameter<float>("expand_scale", expand_scale_);
     this->get_parameter<int>("roi_size_min", roi_size_min_);
     this->get_parameter<int>("roi_size_max", roi_size_max_);
-    int cache_len = static_cast<int>(cache_len_limit_);
-    this->get_parameter<int>("cache_len_limit", cache_len);
-    cache_len_limit_ = static_cast<size_t>(cache_len);
-    this->get_parameter<int>("ai_msg_timeout_ms", ai_msg_timeout_ms_);
-    this->get_parameter<float>("score_threshold", score_threshold_);
+    this->get_parameter<int>("image_width", image_width_);
+    this->get_parameter<int>("image_height", image_height_);
+    this->get_parameter<int>("max_lost_frames", max_lost_frames_);
 
     // 打印配置信息
     RCLCPP_WARN(this->get_logger(),
-        "\n========== 人脸关键点检测 (双路) ==========\n"
+        "\n========== 人脸关键点检测 (自适应ROI) ==========\n"
         " landmarks_model_file_name: %s\n"
         " is_sync_mode: %d (%s)\n"
-        " score_threshold: %.2f\n"
         " expand_scale: %.2f\n"
         " roi_size: [%d, %d]\n"
-        " cache_len_limit: %zu\n"
-        " 左IR: %s -> %s -> %s\n"
-        " 右IR: %s -> %s -> %s\n"
-        "============================================",
+        " image_size: %dx%d\n"
+        " max_lost_frames: %d\n"
+        " 左IR: %s -> %s\n"
+        " 右IR: %s -> %s\n"
+        "================================================",
         landmarks_model_file_name_.c_str(),
         is_sync_mode_, is_sync_mode_ == 0 ? "异步" : "同步",
-        score_threshold_,
         expand_scale_,
         roi_size_min_, roi_size_max_,
-        cache_len_limit_,
-        left_img_topic_.c_str(), left_ai_sub_topic_.c_str(), left_ai_pub_topic_.c_str(),
-        right_img_topic_.c_str(), right_ai_sub_topic_.c_str(), right_ai_pub_topic_.c_str());
+        image_width_, image_height_,
+        max_lost_frames_,
+        left_img_topic_.c_str(), left_ai_pub_topic_.c_str(),
+        right_img_topic_.c_str(), right_ai_pub_topic_.c_str());
 
     // 初始化模型
     if (Init() != 0)
@@ -95,24 +89,11 @@ FaceLandmarksDetNode::FaceLandmarksDetNode(const std::string &node_name, const N
     }
     RCLCPP_INFO(this->get_logger(), "Model input: %dx%d", model_input_width_, model_input_height_);
 
-    // 初始化双路组件
-    left_ai_manage_ = std::make_shared<AiMsgManage>(this->get_logger());
-    right_ai_manage_ = std::make_shared<AiMsgManage>(this->get_logger());
-    predict_task_ = std::make_shared<std::thread>(std::bind(&FaceLandmarksDetNode::RunPredict, this));
-
     // 创建双路发布者
     left_ai_pub_ = this->create_publisher<ai_msgs::msg::PerceptionTargets>(
         left_ai_pub_topic_, 10);
     right_ai_pub_ = this->create_publisher<ai_msgs::msg::PerceptionTargets>(
         right_ai_pub_topic_, 10);
-
-    // 创建双路AI消息订阅
-    left_ai_sub_ = this->create_subscription<ai_msgs::msg::PerceptionTargets>(
-        left_ai_sub_topic_, 10,
-        std::bind(&FaceLandmarksDetNode::LeftAiCallback, this, std::placeholders::_1));
-    right_ai_sub_ = this->create_subscription<ai_msgs::msg::PerceptionTargets>(
-        right_ai_sub_topic_, 10,
-        std::bind(&FaceLandmarksDetNode::RightAiCallback, this, std::placeholders::_1));
 
     // 创建双路SharedMem图像订阅
     left_img_sub_ = this->create_subscription<hbm_img_msgs::msg::HbmMsg1080P>(
@@ -122,21 +103,11 @@ FaceLandmarksDetNode::FaceLandmarksDetNode(const std::string &node_name, const N
         right_img_topic_, rclcpp::SensorDataQoS(),
         std::bind(&FaceLandmarksDetNode::RightImgCallback, this, std::placeholders::_1));
 
-    RCLCPP_INFO(this->get_logger(), "Node initialized successfully");
+    RCLCPP_INFO(this->get_logger(), "Node initialized successfully (Adaptive ROI mode)");
 }
 
 FaceLandmarksDetNode::~FaceLandmarksDetNode()
 {
-    // 通知双路缓存退出
-    {
-        std::unique_lock<std::mutex> lg(left_mtx_img_);
-        left_cv_img_.notify_all();
-    }
-    {
-        std::unique_lock<std::mutex> lg(right_mtx_img_);
-        right_cv_img_.notify_all();
-    }
-
     if (predict_task_ && predict_task_->joinable())
     {
         predict_task_->join();
@@ -164,49 +135,181 @@ int FaceLandmarksDetNode::Predict(
     return Run(inputs, dnn_output, rois, is_sync_mode_ == 1);
 }
 
-// ==================== AI消息处理 ====================
+// ==================== ROI管理函数 ====================
 
-void FaceLandmarksDetNode::LeftAiCallback(const ai_msgs::msg::PerceptionTargets::ConstSharedPtr msg)
+hbDNNRoi FaceLandmarksDetNode::GetDefaultROI()
 {
-    if (!msg || !rclcpp::ok() || !left_ai_manage_) return;
-    left_ai_manage_->Feed(msg);
+    // 返回画面中间1/3区域
+    hbDNNRoi roi;
+    roi.left = image_width_ / 3;
+    roi.top = image_height_ / 3;
+    roi.right = image_width_ * 2 / 3;
+    roi.bottom = image_height_ * 2 / 3;
+
+    // ROI边界对齐：left/top必须为偶数，right/bottom必须为奇数
+    roi.left += (roi.left % 2 == 0 ? 0 : 1);
+    roi.top += (roi.top % 2 == 0 ? 0 : 1);
+    roi.right -= (roi.right % 2 == 1 ? 0 : 1);
+    roi.bottom -= (roi.bottom % 2 == 1 ? 0 : 1);
+
+    return roi;
 }
 
-void FaceLandmarksDetNode::RightAiCallback(const ai_msgs::msg::PerceptionTargets::ConstSharedPtr msg)
+std::vector<hbDNNRoi> FaceLandmarksDetNode::GetCurrentROIs(
+    std::vector<AdaptiveRoi>& rois, std::mutex& roi_mtx)
 {
-    if (!msg || !rclcpp::ok() || !right_ai_manage_) return;
-    right_ai_manage_->Feed(msg);
+    std::lock_guard<std::mutex> lock(roi_mtx);
+
+    std::vector<hbDNNRoi> result;
+
+    if (rois.empty())
+    {
+        // 没有追踪目标，使用默认ROI
+        result.push_back(GetDefaultROI());
+    }
+    else
+    {
+        // 使用已有的追踪ROI
+        for (const auto& adaptive_roi : rois)
+        {
+            result.push_back(adaptive_roi.roi);
+        }
+    }
+
+    return result;
+}
+
+hbDNNRoi FaceLandmarksDetNode::ComputeRoiFromLandmarks(
+    const std::vector<geometry_msgs::msg::Point32>& landmarks)
+{
+    if (landmarks.empty())
+    {
+        return GetDefaultROI();
+    }
+
+    // 计算关键点的边界框
+    float min_x = landmarks[0].x;
+    float max_x = landmarks[0].x;
+    float min_y = landmarks[0].y;
+    float max_y = landmarks[0].y;
+
+    for (const auto& pt : landmarks)
+    {
+        min_x = std::min(min_x, pt.x);
+        max_x = std::max(max_x, pt.x);
+        min_y = std::min(min_y, pt.y);
+        max_y = std::max(max_y, pt.y);
+    }
+
+    // 计算中心和尺寸
+    float center_x = (min_x + max_x) / 2.0f;
+    float center_y = (min_y + max_y) / 2.0f;
+    float box_w = max_x - min_x;
+    float box_h = max_y - min_y;
+
+    // 扩展ROI
+    float w_new = box_w * expand_scale_;
+    float h_new = box_h * expand_scale_;
+
+    hbDNNRoi roi;
+    roi.left = static_cast<int32_t>(center_x - w_new / 2);
+    roi.top = static_cast<int32_t>(center_y - h_new / 2);
+    roi.right = static_cast<int32_t>(center_x + w_new / 2);
+    roi.bottom = static_cast<int32_t>(center_y + h_new / 2);
+
+    // 裁剪到图像边界
+    roi.left = std::max(0, roi.left);
+    roi.top = std::max(0, roi.top);
+    roi.right = std::min(image_width_, roi.right);
+    roi.bottom = std::min(image_height_, roi.bottom);
+
+    // ROI边界对齐
+    roi.left += (roi.left % 2 == 0 ? 0 : 1);
+    roi.top += (roi.top % 2 == 0 ? 0 : 1);
+    roi.right -= (roi.right % 2 == 1 ? 0 : 1);
+    roi.bottom -= (roi.bottom % 2 == 1 ? 0 : 1);
+
+    return roi;
+}
+
+void FaceLandmarksDetNode::UpdateROIs(
+    std::vector<AdaptiveRoi>& rois, std::mutex& roi_mtx,
+    const ai_msgs::msg::PerceptionTargets& results)
+{
+    std::lock_guard<std::mutex> lock(roi_mtx);
+
+    // 收集本次检测到的人脸
+    std::vector<AdaptiveRoi> new_rois;
+
+    for (const auto& target : results.targets)
+    {
+        for (const auto& point : target.points)
+        {
+            if (point.type == "face_kps" && !point.point.empty())
+            {
+                AdaptiveRoi new_roi;
+                new_roi.roi = ComputeRoiFromLandmarks(point.point);
+                new_roi.track_id = next_track_id_++;
+                new_roi.lost_count = 0;
+                new_rois.push_back(new_roi);
+            }
+        }
+    }
+
+    if (new_rois.empty())
+    {
+        // 没有检测到人脸，增加所有现有ROI的丢失计数
+        for (auto& roi : rois)
+        {
+            roi.lost_count++;
+        }
+
+        // 移除丢失次数过多的ROI
+        rois.erase(
+            std::remove_if(rois.begin(), rois.end(),
+                [this](const AdaptiveRoi& r) { return r.lost_count > max_lost_frames_; }),
+            rois.end());
+    }
+    else
+    {
+        // 用新检测到的ROI替换旧的
+        rois = std::move(new_rois);
+    }
 }
 
 // ==================== 双路图像回调 ====================
 
 void FaceLandmarksDetNode::LeftImgCallback(const hbm_img_msgs::msg::HbmMsg1080P::ConstSharedPtr msg)
 {
-    ProcessImage(msg, left_ai_manage_, left_ai_pub_,
-                 left_cache_img_, left_mtx_img_, left_cv_img_, 0);
+    ProcessImage(msg, left_rois_, left_roi_mtx_, left_ai_pub_, 0);
 }
 
 void FaceLandmarksDetNode::RightImgCallback(const hbm_img_msgs::msg::HbmMsg1080P::ConstSharedPtr msg)
 {
-    ProcessImage(msg, right_ai_manage_, right_ai_pub_,
-                 right_cache_img_, right_mtx_img_, right_cv_img_, 1);
+    ProcessImage(msg, right_rois_, right_roi_mtx_, right_ai_pub_, 1);
 }
 
 void FaceLandmarksDetNode::ProcessImage(
     const hbm_img_msgs::msg::HbmMsg1080P::ConstSharedPtr img_msg,
-    std::shared_ptr<AiMsgManage> ai_manage,
+    std::vector<AdaptiveRoi>& rois,
+    std::mutex& roi_mtx,
     rclcpp::Publisher<ai_msgs::msg::PerceptionTargets>::SharedPtr publisher,
-    std::queue<CacheImgType>& cache_img,
-    std::mutex& mtx_img,
-    std::condition_variable& cv_img,
     int channel_id)
 {
-    (void)ai_manage;
     if (!img_msg || !rclcpp::ok()) return;
 
     stat_img_count_++;
+
+    // 记录回调入口时间
     struct timespec time_start = {0, 0};
     clock_gettime(CLOCK_REALTIME, &time_start);
+
+    // 计算传输延迟（图像时间戳 -> 回调入口）
+    int64_t img_ts_ns = static_cast<int64_t>(img_msg->time_stamp.sec) * 1000000000LL +
+                        static_cast<int64_t>(img_msg->time_stamp.nanosec);
+    int64_t callback_enter_ns = static_cast<int64_t>(time_start.tv_sec) * 1000000000LL +
+                                static_cast<int64_t>(time_start.tv_nsec);
+    double transport_delay_ms = static_cast<double>(callback_enter_ns - img_ts_ns) / 1000000.0;
 
     // 检查图像格式
     std::string encoding(reinterpret_cast<const char *>(img_msg->encoding.data()));
@@ -217,16 +320,43 @@ void FaceLandmarksDetNode::ProcessImage(
         return;
     }
 
+    // 更新图像尺寸
+    image_width_ = img_msg->width;
+    image_height_ = img_msg->height;
+
+    // 记录金字塔构建开始时间
+    struct timespec time_pyramid_start = {0, 0};
+    clock_gettime(CLOCK_REALTIME, &time_pyramid_start);
+
     // 构建金字塔输入
     auto pyramid = hobot::dnn_node::ImageProc::GetNV12PyramidFromNV12Img(
         reinterpret_cast<const char *>(img_msg->data.data()),
         img_msg->height, img_msg->width,
         img_msg->height, img_msg->width);
+
+    struct timespec time_pyramid_end = {0, 0};
+    clock_gettime(CLOCK_REALTIME, &time_pyramid_end);
+    double pyramid_ms = (time_pyramid_end.tv_sec - time_pyramid_start.tv_sec) * 1000.0 +
+                        (time_pyramid_end.tv_nsec - time_pyramid_start.tv_nsec) / 1000000.0;
+
     if (!pyramid)
     {
         RCLCPP_ERROR(this->get_logger(), "[通道%d] 获取NV12金字塔失败!", channel_id);
         return;
     }
+
+    // 记录获取ROI开始时间
+    struct timespec time_roi_start = {0, 0};
+    clock_gettime(CLOCK_REALTIME, &time_roi_start);
+
+    // 获取当前ROI
+    auto current_rois = GetCurrentROIs(rois, roi_mtx);
+    auto rois_ptr = std::make_shared<std::vector<hbDNNRoi>>(current_rois);
+
+    struct timespec time_roi_end = {0, 0};
+    clock_gettime(CLOCK_REALTIME, &time_roi_end);
+    double roi_ms = (time_roi_end.tv_sec - time_roi_start.tv_sec) * 1000.0 +
+                    (time_roi_end.tv_nsec - time_roi_start.tv_nsec) / 1000000.0;
 
     // 创建推理输出
     auto dnn_output = std::make_shared<FaceLandmarksDetOutput>();
@@ -237,125 +367,70 @@ void FaceLandmarksDetNode::ProcessImage(
     dnn_output->perf_preprocess.stamp_start.nanosec = time_start.tv_nsec;
     dnn_output->perf_preprocess.set__type(model_name_ + "_preprocess");
     dnn_output->channel_id = channel_id;
+    dnn_output->valid_rois = rois_ptr;
 
-    // 加入缓存队列
-    std::unique_lock<std::mutex> lg(mtx_img);
-    if (cache_img.size() >= cache_len_limit_)
+    // 构建valid_roi_idx映射
+    for (size_t i = 0; i < rois_ptr->size(); i++)
     {
-        auto drop = cache_img.front();
-        cache_img.pop();
-        stat_drop_count_++;
-        if (drop.first->ai_msg && publisher)
+        dnn_output->valid_roi_idx[i] = i;
+    }
+
+    // 记录构建推理输入开始时间
+    struct timespec time_input_start = {0, 0};
+    clock_gettime(CLOCK_REALTIME, &time_input_start);
+
+    // 构建推理输入
+    auto model_manage = GetModel();
+    if (!model_manage) return;
+
+    std::vector<std::shared_ptr<DNNInput>> inputs;
+    inputs.reserve(rois_ptr->size() * model_manage->GetInputCount());
+    for (size_t i = 0; i < rois_ptr->size(); i++)
+    {
+        for (int32_t j = 0; j < model_manage->GetInputCount(); j++)
         {
-            publisher->publish(std::move(drop.first->ai_msg));
+            inputs.push_back(pyramid);
         }
     }
-    cache_img.push(std::make_pair(std::move(dnn_output), std::move(pyramid)));
-    cv_img.notify_one();
-}
 
-// ==================== 推理线程 ====================
+    struct timespec time_input_end = {0, 0};
+    clock_gettime(CLOCK_REALTIME, &time_input_end);
+    double input_ms = (time_input_end.tv_sec - time_input_start.tv_sec) * 1000.0 +
+                      (time_input_end.tv_nsec - time_input_start.tv_nsec) / 1000000.0;
 
-void FaceLandmarksDetNode::RunPredict()
-{
-    RCLCPP_INFO(this->get_logger(), "推理线程启动");
-    while (rclcpp::ok())
+    // 记录预处理结束时间
+    struct timespec time_now = {0, 0};
+    clock_gettime(CLOCK_REALTIME, &time_now);
+    dnn_output->perf_preprocess.stamp_end.sec = time_now.tv_sec;
+    dnn_output->perf_preprocess.stamp_end.nanosec = time_now.tv_nsec;
+
+    double preprocess_total_ms = (time_now.tv_sec - time_start.tv_sec) * 1000.0 +
+                                 (time_now.tv_nsec - time_start.tv_nsec) / 1000000.0;
+
+    // 输出预处理阶段耗时日志
+    RCLCPP_INFO(this->get_logger(),
+        "[通道%d] 预处理: 传输=%.2fms, 金字塔=%.2fms, 获取ROI=%.2fms, 构建输入=%.2fms, 总计=%.2fms",
+        channel_id, transport_delay_ms, pyramid_ms, roi_ms, input_ms, preprocess_total_ms);
+
+    // 记录提交推理时间
+    struct timespec time_predict_start = {0, 0};
+    clock_gettime(CLOCK_REALTIME, &time_predict_start);
+
+    // 执行推理
+    int predict_ret = Predict(inputs, rois_ptr, dnn_output);
+
+    struct timespec time_predict_end = {0, 0};
+    clock_gettime(CLOCK_REALTIME, &time_predict_end);
+    double predict_submit_ms = (time_predict_end.tv_sec - time_predict_start.tv_sec) * 1000.0 +
+                               (time_predict_end.tv_nsec - time_predict_start.tv_nsec) / 1000000.0;
+
+    RCLCPP_INFO(this->get_logger(),
+        "[通道%d] 提交推理: %.2fms, 返回值=%d",
+        channel_id, predict_submit_ms, predict_ret);
+
+    if (predict_ret == 0)
     {
-        CacheImgType img_data;
-        int channel_id = -1;
-        std::shared_ptr<AiMsgManage> ai_manage = nullptr;
-        rclcpp::Publisher<ai_msgs::msg::PerceptionTargets>::SharedPtr publisher = nullptr;
-
-        // 尝试从左路缓存获取
-        {
-            std::unique_lock<std::mutex> lg(left_mtx_img_);
-            if (!left_cache_img_.empty())
-            {
-                img_data = std::move(left_cache_img_.front());
-                left_cache_img_.pop();
-                channel_id = 0;
-                ai_manage = left_ai_manage_;
-                publisher = left_ai_pub_;
-            }
-        }
-
-        // 如果左路为空，尝试从右路缓存获取
-        if (channel_id < 0)
-        {
-            std::unique_lock<std::mutex> lg(right_mtx_img_);
-            if (!right_cache_img_.empty())
-            {
-                img_data = std::move(right_cache_img_.front());
-                right_cache_img_.pop();
-                channel_id = 1;
-                ai_manage = right_ai_manage_;
-                publisher = right_ai_pub_;
-            }
-        }
-
-        // 如果双路都为空，等待
-        if (channel_id < 0)
-        {
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
-            continue;
-        }
-
-        auto dnn_output = img_data.first;
-        auto pyramid = img_data.second;
-
-        // 从AI消息获取ROI
-        std::shared_ptr<std::vector<hbDNNRoi>> rois = nullptr;
-        std::map<size_t, size_t> valid_roi_idx;
-        ai_msgs::msg::PerceptionTargets::UniquePtr ai_msg = nullptr;
-
-        if (ai_manage->GetTargetRois(
-                dnn_output->image_msg_header->stamp, rois, valid_roi_idx, ai_msg,
-                std::bind(&FaceLandmarksDetNode::NormalizeRoi, this,
-                    std::placeholders::_1, std::placeholders::_2,
-                    expand_scale_, pyramid->width, pyramid->height),
-                ai_msg_timeout_ms_) < 0 || ai_msg == nullptr)
-        {
-            continue;
-        }
-
-        stat_match_count_++;
-
-        // 检查ROI有效性
-        if (!rois || rois->empty())
-        {
-            if (publisher) publisher->publish(std::move(ai_msg));
-            continue;
-        }
-
-        dnn_output->valid_rois = rois;
-        dnn_output->valid_roi_idx = valid_roi_idx;
-        dnn_output->ai_msg = std::move(ai_msg);
-
-        // 构建推理输入
-        auto model_manage = GetModel();
-        if (!model_manage) continue;
-
-        std::vector<std::shared_ptr<DNNInput>> inputs;
-        inputs.reserve(rois->size() * model_manage->GetInputCount());
-        for (size_t i = 0; i < rois->size(); i++)
-        {
-            for (int32_t j = 0; j < model_manage->GetInputCount(); j++)
-            {
-                inputs.push_back(pyramid);
-            }
-        }
-
-        // 记录预处理结束时间
-        struct timespec time_now = {0, 0};
-        clock_gettime(CLOCK_REALTIME, &time_now);
-        dnn_output->perf_preprocess.stamp_end.sec = time_now.tv_sec;
-        dnn_output->perf_preprocess.stamp_end.nanosec = time_now.tv_nsec;
-
-        // 执行推理
-        if (Predict(inputs, rois, dnn_output) == 0)
-        {
-            stat_infer_count_++;
-        }
+        stat_infer_count_++;
     }
 }
 
@@ -385,7 +460,7 @@ int FaceLandmarksDetNode::NormalizeRoi(
     dst->right = std::min(static_cast<float>(total_w), static_cast<float>(dst->right));
     dst->bottom = std::min(static_cast<float>(total_h), static_cast<float>(dst->bottom));
 
-    // ROI边界对齐：left/top必须为偶数，right/bottom必须为奇数
+    // ROI边界对齐
     dst->left += (dst->left % 2 == 0 ? 0 : 1);
     dst->top += (dst->top % 2 == 0 ? 0 : 1);
     dst->right -= (dst->right % 2 == 1 ? 0 : 1);
@@ -399,13 +474,9 @@ int FaceLandmarksDetNode::NormalizeRoi(
 
     if (max_size < roi_size_max_ && min_size > roi_size_min_)
     {
-        return 0;  // 有效ROI
+        return 0;
     }
-    else
-    {
-        stat_filter_count_++;
-        return -1;  // 过滤掉
-    }
+    return -1;
 }
 
 // ==================== 后处理函数 ====================
@@ -417,28 +488,23 @@ int FaceLandmarksDetNode::PostProcess(const std::shared_ptr<DnnNodeOutput> &node
     auto output = std::dynamic_pointer_cast<FaceLandmarksDetOutput>(node_output);
     if (!output) return -1;
 
-    // 根据channel_id选择对应的publisher
-    auto& publisher = (output->channel_id == 0) ? left_ai_pub_ : right_ai_pub_;
-    if (!publisher) return -1;
+    // 记录后处理开始时间
+    struct timespec time_post_start = {0, 0};
+    clock_gettime(CLOCK_REALTIME, &time_post_start);
 
-    // 性能统计输出 (每5秒)
-    if (node_output->rt_stat && node_output->rt_stat->fps_updated)
-    {
-        float match_rate = stat_img_count_ > 0 ?
-            (100.0f * stat_match_count_ / stat_img_count_) : 0.0f;
-        RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
-            "[Perf] in_fps: %.1f, out_fps: %.1f, infer: %dms, "
-            "match_rate: %.1f%%, drop: %lu, filter: %lu",
-            node_output->rt_stat->input_fps,
-            node_output->rt_stat->output_fps,
-            node_output->rt_stat->infer_time_ms,
-            match_rate,
-            stat_drop_count_.load(),
-            stat_filter_count_.load());
-    }
+    // 根据channel_id选择对应的publisher和rois
+    auto& publisher = (output->channel_id == 0) ? left_ai_pub_ : right_ai_pub_;
+    auto& rois = (output->channel_id == 0) ? left_rois_ : right_rois_;
+    auto& roi_mtx = (output->channel_id == 0) ? left_roi_mtx_ : right_roi_mtx_;
+
+    if (!publisher) return -1;
 
     struct timespec time_now = {0, 0};
     clock_gettime(CLOCK_REALTIME, &time_now);
+
+    // 记录解析关键点开始时间
+    struct timespec time_parse_start = {0, 0};
+    clock_gettime(CLOCK_REALTIME, &time_parse_start);
 
     // 解析关键点
     auto parser = std::make_shared<FaceLandmarksDetOutputParser>(this->get_logger());
@@ -448,82 +514,79 @@ int FaceLandmarksDetNode::PostProcess(const std::shared_ptr<DnnNodeOutput> &node
         parser->Parse(landmarks_result, output->output_tensors, output->valid_rois);
     }
 
+    struct timespec time_parse_end = {0, 0};
+    clock_gettime(CLOCK_REALTIME, &time_parse_end);
+    double parse_ms = (time_parse_end.tv_sec - time_parse_start.tv_sec) * 1000.0 +
+                      (time_parse_end.tv_nsec - time_parse_start.tv_nsec) / 1000000.0;
+
     // 构建输出消息
-    ai_msgs::msg::PerceptionTargets::UniquePtr &msg = output->ai_msg;
-    if (!msg) return -1;
-
-    // 检查数据一致性
-    if (landmarks_result->values.size() != output->valid_rois->size() ||
-        output->valid_rois->size() != output->valid_roi_idx.size())
-    {
-        publisher->publish(std::move(msg));
-        return 0;
-    }
-
-    // 构建新的AI消息
     ai_msgs::msg::PerceptionTargets::UniquePtr ai_msg(new ai_msgs::msg::PerceptionTargets());
-    ai_msg->set__header(msg->header);
-    ai_msg->set__disappeared_targets(msg->disappeared_targets);
+    ai_msg->header.set__stamp(output->image_msg_header->stamp);
+    ai_msg->header.set__frame_id(output->image_msg_header->frame_id);
+
     if (node_output->rt_stat)
     {
         ai_msg->set__fps(round(node_output->rt_stat->output_fps));
     }
 
-    // 处理每个target
-    int face_roi_idx = 0;
-    const auto &valid_roi_idx = output->valid_roi_idx;
+    // 记录构建消息开始时间
+    struct timespec time_msg_start = {0, 0};
+    clock_gettime(CLOCK_REALTIME, &time_msg_start);
 
-    for (const auto &in_target : msg->targets)
+    // 处理每个ROI的关键点结果
+    for (size_t i = 0; i < landmarks_result->values.size(); i++)
     {
+        const auto& landmarks = landmarks_result->values[i];
+        if (landmarks.empty()) continue;
+
         ai_msgs::msg::Target target;
-        target.set__type(in_target.type);
-        target.set__attributes(in_target.attributes);
-        target.set__captures(in_target.captures);
-        target.set__track_id(in_target.track_id);
+        target.set__type("face");
+        target.set__track_id(i);
 
-        std::vector<ai_msgs::msg::Point> landmarks_points;
-        std::vector<ai_msgs::msg::Roi> rois;
-
-        for (const auto &roi : in_target.rois)
+        // 添加ROI
+        if (i < output->valid_rois->size())
         {
-            if (roi.type != "face") continue;
-
-            rois.push_back(roi);
-            target.set__rois(rois);
-
-            // 检查索引有效性
-            if (valid_roi_idx.find(face_roi_idx) == valid_roi_idx.end())
-            {
-                face_roi_idx++;
-                continue;
-            }
-
-            auto idx = valid_roi_idx.at(face_roi_idx);
-            if (idx >= landmarks_result->values.size())
-            {
-                break;
-            }
-
-            // 添加关键点
-            ai_msgs::msg::Point face_landmarks;
-            face_landmarks.set__type("face_kps");
-            for (const auto &pt : landmarks_result->values[idx])
-            {
-                geometry_msgs::msg::Point32 p;
-                p.set__x(pt.x);
-                p.set__y(pt.y);
-                face_landmarks.point.emplace_back(p);
-            }
-            landmarks_points.push_back(face_landmarks);
-            face_roi_idx++;
+            ai_msgs::msg::Roi roi;
+            roi.type = "face";
+            roi.rect.set__x_offset((*output->valid_rois)[i].left);
+            roi.rect.set__y_offset((*output->valid_rois)[i].top);
+            roi.rect.set__width((*output->valid_rois)[i].right - (*output->valid_rois)[i].left);
+            roi.rect.set__height((*output->valid_rois)[i].bottom - (*output->valid_rois)[i].top);
+            target.rois.push_back(roi);
         }
 
-        target.set__points(landmarks_points);
-        if (!target.rois.empty())
+        // 添加关键点
+        ai_msgs::msg::Point face_landmarks;
+        face_landmarks.set__type("face_kps");
+        for (const auto &pt : landmarks)
         {
-            ai_msg->targets.emplace_back(target);
+            geometry_msgs::msg::Point32 p;
+            p.set__x(pt.x);
+            p.set__y(pt.y);
+            face_landmarks.point.emplace_back(p);
         }
+        target.points.push_back(face_landmarks);
+
+        ai_msg->targets.emplace_back(target);
+        stat_detect_count_++;
     }
+
+    struct timespec time_msg_end = {0, 0};
+    clock_gettime(CLOCK_REALTIME, &time_msg_end);
+    double msg_build_ms = (time_msg_end.tv_sec - time_msg_start.tv_sec) * 1000.0 +
+                          (time_msg_end.tv_nsec - time_msg_start.tv_nsec) / 1000000.0;
+
+    // 记录更新ROI开始时间
+    struct timespec time_update_roi_start = {0, 0};
+    clock_gettime(CLOCK_REALTIME, &time_update_roi_start);
+
+    // 更新ROI缓存
+    UpdateROIs(rois, roi_mtx, *ai_msg);
+
+    struct timespec time_update_roi_end = {0, 0};
+    clock_gettime(CLOCK_REALTIME, &time_update_roi_end);
+    double update_roi_ms = (time_update_roi_end.tv_sec - time_update_roi_start.tv_sec) * 1000.0 +
+                           (time_update_roi_end.tv_nsec - time_update_roi_start.tv_nsec) / 1000000.0;
 
     // 添加性能信息
     output->perf_preprocess.set__time_ms_duration(
@@ -548,6 +611,45 @@ int FaceLandmarksDetNode::PostProcess(const std::shared_ptr<DnnNodeOutput> &node
     perf_post.set__time_ms_duration(CalTimeMsDuration(perf_post.stamp_start, perf_post.stamp_end));
     ai_msg->perfs.push_back(perf_post);
 
+    // 记录发布消息开始时间
+    struct timespec time_pub_start = {0, 0};
+    clock_gettime(CLOCK_REALTIME, &time_pub_start);
+
     publisher->publish(std::move(ai_msg));
+
+    struct timespec time_pub_end = {0, 0};
+    clock_gettime(CLOCK_REALTIME, &time_pub_end);
+    double publish_ms = (time_pub_end.tv_sec - time_pub_start.tv_sec) * 1000.0 +
+                        (time_pub_end.tv_nsec - time_pub_start.tv_nsec) / 1000000.0;
+
+    // 计算后处理总耗时
+    double post_total_ms = (time_pub_end.tv_sec - time_post_start.tv_sec) * 1000.0 +
+                           (time_pub_end.tv_nsec - time_post_start.tv_nsec) / 1000000.0;
+
+    // 计算BPU推理耗时
+    double infer_ms = 0.0;
+    if (node_output->rt_stat)
+    {
+        infer_ms = static_cast<double>(node_output->rt_stat->infer_time_ms);
+    }
+
+    // 输出后处理阶段耗时日志
+    RCLCPP_INFO(this->get_logger(),
+        "[通道%d] 后处理: 解析=%.2fms, 构建消息=%.2fms, 更新ROI=%.2fms, 发布=%.2fms, 总计=%.2fms, BPU推理=%dms",
+        output->channel_id, parse_ms, msg_build_ms, update_roi_ms, publish_ms, post_total_ms,
+        node_output->rt_stat ? node_output->rt_stat->infer_time_ms : 0);
+
+    // 性能统计输出 (每5秒)
+    if (node_output->rt_stat && node_output->rt_stat->fps_updated)
+    {
+        RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
+            "[Perf] in_fps: %.1f, out_fps: %.1f, infer: %dms, detect: %lu, img: %lu",
+            node_output->rt_stat->input_fps,
+            node_output->rt_stat->output_fps,
+            node_output->rt_stat->infer_time_ms,
+            stat_detect_count_.load(),
+            stat_img_count_.load());
+    }
+
     return 0;
 }
